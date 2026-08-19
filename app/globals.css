@@ -404,7 +404,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .reference-login-panel { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fff; animation: originalLoginIn .4s ease both; }
 @keyframes originalLoginIn { from { opacity: 0; transform: scale(.99); } }
 .reference-login-panel img { width: auto; height: 32px; max-width: calc(100vw - 48px); object-fit: contain; }
-.reference-login-panel > p { margin: 13px 0 42px; font-size: 8px; font-weight: 700; letter-spacing: .27em; }
+.reference-login-panel > img + .reference-login-options, .reference-login-panel > img + .reference-login-mode { margin-top: 28px; }
 .reference-login-panel > a, .reference-login-panel > button:not(.reference-login-back) { display: flex; align-items: center; justify-content: space-between; width: min(330px, calc(100vw - 40px)); min-height: 46px; margin-top: 7px; padding: 0 14px; border: 1px solid #111; background: #111; color: #fff; font-size: 8px; font-weight: 800; letter-spacing: .07em; text-decoration: none; cursor: pointer; }
 .reference-login-options { display: grid; width: min(165px, calc(100vw - 40px)); gap: 4px; }
 .reference-login-options > button { display: flex; align-items: center; justify-content: space-between; min-height: 23px; padding: 0 7px; border: 1px solid #111; background: #fff; color: #111; font-size: 6px; font-weight: 800; letter-spacing: .05em; cursor: pointer; }

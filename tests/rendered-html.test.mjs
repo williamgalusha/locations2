@@ -42,6 +42,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /reference-credential-form/);
   assert.match(referenceUi, /LOG IN — CLIENT/);
   assert.match(referenceUi, /LOG IN — PRODUCTION/);
+  assert.doesNotMatch(referenceUi, />PRODUCTION CONTROL<\/p>/);
   assert.doesNotMatch(referenceUi, /PREVIEW (?:WORKSPACE|CLIENT PORTAL|PRODUCTION WORKSPACE)/);
   assert.match(referenceUi, /clientOnly/);
   assert.match(referenceUi, /PRODUCTION ESTIMATE/);

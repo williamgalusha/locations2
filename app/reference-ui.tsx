@@ -142,7 +142,6 @@ export function ReferenceLoginScreen({ user, enter, credentialLogin }: { user: U
   return <main className="reference-cover">
     {!login ? <button className="reference-cover-animation" onClick={() => setLogin(true)} title="Click to log in" aria-label="Click to log in"><CoverGrid /></button> : <section className="reference-login-panel">
       <img src="/bill-inc.png" alt="BILL, INC." />
-      <p>PRODUCTION CONTROL</p>
       {!loginMode ? <div className="reference-login-options">
         <button onClick={() => setLoginMode("client")}>LOG IN — CLIENT <b>→</b></button>
         <button onClick={() => setLoginMode("production")}>LOG IN — PRODUCTION <b>→</b></button>
