@@ -50,7 +50,11 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.doesNotMatch(referenceUi, /PREVIEW (?:WORKSPACE|CLIENT PORTAL|PRODUCTION WORKSPACE)/);
   assert.match(referenceUi, /clientOnly/);
   assert.match(referenceUi, /PRODUCTION ESTIMATE/);
-  assert.match(referenceUi, /＋ ADD VERSION/);
+  assert.match(referenceUi, /SAVE AS NEW VERSION/);
+  for (const control of ["↶ UNDO", "CLEAR BUDGET", "PUSH TO CLIENT PORTAL", "ADD SECTION BELOW", "REMOVE SECTION", "MARK N\/A", "REMOVE LINE", "ADD LINE", "SAVE AS NEW OVERAGE", "REACTIVATE TO EDIT"]) assert.match(referenceUi, new RegExp(control));
+  assert.match(referenceUi, /draggable=\{!readOnly\}/);
+  assert.match(css, /\.estimate-line[^}]*padding:\s*1px 0[^}]*font-size:\s*9px/);
+  assert.match(css, /\.estimate-section[^}]*margin-top:\s*14px/);
   assert.match(referenceUi, /BILLING DETAILS/);
   assert.match(referenceUi, /CHANGES SINCE PREVIOUS VERSION/);
   assert.match(referenceUi, /ALL LINES/);
@@ -102,7 +106,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   }
   assert.ok(budgetMigration.includes("CREATE TABLE `budget_versions`"));
   for (const column of ["section_code", "item_code", "contact_email", "gallery", "deleted_at", "client_visible"]) assert.match(restoredMigration, new RegExp(column));
-  for (const action of ["create_project", "add_budget_line", "update_budget_line", "delete_budget_line", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_location_status", "update_project_status"]) {
+  for (const action of ["create_project", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_location_status", "update_project_status"]) {
     assert.match(route, new RegExp(action));
   }
   assert.match(fileRoute, /bucket\(\)\.put/);
