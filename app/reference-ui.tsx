@@ -117,7 +117,7 @@ function CoverGrid() {
     const update = () => {
       const box = viewport.current?.getBoundingClientRect();
       if (!box || !stage.current) return;
-      const coverScale = Math.max(box.width / 1920, box.height / 1080) * 1.002;
+      const coverScale = Math.max(box.width / 1920, box.height / 1080) * 1.08;
       stage.current.style.transform = `translate3d(-50%, -50%, 0) scale(${coverScale})`;
     };
     update(); const observer = new ResizeObserver(update); if (viewport.current) observer.observe(viewport.current); return () => observer.disconnect();
@@ -140,7 +140,7 @@ export function ReferenceLoginScreen({ user, enter, credentialLogin }: { user: U
     finally { setLoggingIn(false); }
   };
   return <main className="reference-cover">
-    {!login ? <button className="reference-cover-animation" onClick={() => setLogin(true)} title="Click to log in"><CoverGrid /><span>CLICK TO LOG IN</span></button> : <section className="reference-login-panel">
+    {!login ? <button className="reference-cover-animation" onClick={() => setLogin(true)} title="Click to log in" aria-label="Click to log in"><CoverGrid /></button> : <section className="reference-login-panel">
       <img src="/bill-inc.png" alt="BILL, INC." />
       <p>PRODUCTION CONTROL</p>
       {!loginMode ? <div className="reference-login-options">
