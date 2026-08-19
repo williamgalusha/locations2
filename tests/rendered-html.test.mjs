@@ -21,6 +21,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(layout, /BILL, INC\. — Production Control/);
   assert.match(layout, /\/og\.png/);
   assert.match(portal, /CONTROL ROOM/);
+  assert.doesNotMatch(portal, /className="brand"[^\n]*PRODUCTION CONTROL/);
   assert.match(portal, /Production Sheet/);
   assert.match(portal, /Headcount/);
   assert.match(portal, /Client Portal/);

@@ -220,7 +220,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
   return <main className="portal-shell">
     <aside className="sidebar">
-      <button className="brand" onClick={() => openView("control")}><img src="/bill-inc.png" alt="BILL, INC." /><small>PRODUCTION CONTROL</small></button>
+      <button className="brand" onClick={() => openView("control")}><img src="/bill-inc.png" alt="BILL, INC." /></button>
       <div className="side-project"><span>{data.project.code}</span><strong>{data.project.name}</strong><small>{data.project.client}</small></div>
       <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && data.expenses.some((expense) => expense.status === "needs_review") && <i>{data.expenses.filter((expense) => expense.status === "needs_review").length}</i>}</button>)}</div>)}</nav>
       <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserControls(true)} aria-haspopup="dialog" aria-expanded={userControls}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>→</b></button></div>
