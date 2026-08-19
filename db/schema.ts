@@ -10,6 +10,14 @@ export const projects = sqliteTable("projects", {
   shootEnd: text("shoot_end").notNull(),
   currency: text("currency").notNull(),
   createdAt: text("created_at").notNull(),
+  contact: text("contact").notNull().default(""),
+  contactEmail: text("contact_email").notNull().default(""),
+  billingAddress: text("billing_address").notNull().default(""),
+  poNo: text("po_no").notNull().default(""),
+  budgetNotes: text("budget_notes").notNull().default(""),
+  budgetChanges: text("budget_changes").notNull().default(""),
+  markupPct: real("markup_pct").notNull().default(10),
+  insurancePct: real("insurance_pct").notNull().default(5),
 });
 
 export const budgetLines = sqliteTable("budget_lines", {
@@ -20,6 +28,15 @@ export const budgetLines = sqliteTable("budget_lines", {
   estimate: real("estimate").notNull(),
   actual: real("actual").notNull(),
   createdAt: text("created_at").notNull(),
+  sectionCode: text("section_code").notNull().default(""),
+  itemCode: text("item_code").notNull().default(""),
+  itemName: text("item_name").notNull().default(""),
+  rate: real("rate").notNull().default(0),
+  quantity: real("quantity").notNull().default(1),
+  days: real("days").notNull().default(1),
+  taxPct: real("tax_pct").notNull().default(0),
+  isNa: real("is_na").notNull().default(0),
+  naNote: text("na_note").notNull().default(""),
 });
 
 export const budgetVersions = sqliteTable("budget_versions", {
@@ -55,6 +72,13 @@ export const locations = sqliteTable("locations", {
   note: text("note").notNull(),
   clientNote: text("client_note").notNull(),
   updatedAt: text("updated_at").notNull(),
+  category: text("category").notNull().default("Uncategorized"),
+  squareFeet: text("square_feet").notNull().default("—"),
+  availability: text("availability").notNull().default("Availability Pending"),
+  blurb: text("blurb").notNull().default(""),
+  gallery: text("gallery").notNull().default("[]"),
+  deletedAt: text("deleted_at").notNull().default(""),
+  clientVisible: real("client_visible").notNull().default(1),
 });
 
 export const activities = sqliteTable("activities", {

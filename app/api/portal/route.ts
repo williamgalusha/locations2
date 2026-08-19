@@ -42,12 +42,20 @@ async function ensureSchema() {
     db.prepare(`CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY, name TEXT NOT NULL, client TEXT NOT NULL,
       code TEXT NOT NULL, status TEXT NOT NULL, shoot_start TEXT NOT NULL,
-      shoot_end TEXT NOT NULL, currency TEXT NOT NULL, created_at TEXT NOT NULL
+      shoot_end TEXT NOT NULL, currency TEXT NOT NULL, created_at TEXT NOT NULL,
+      contact TEXT NOT NULL DEFAULT '', contact_email TEXT NOT NULL DEFAULT '',
+      billing_address TEXT NOT NULL DEFAULT '', po_no TEXT NOT NULL DEFAULT '',
+      budget_notes TEXT NOT NULL DEFAULT '', budget_changes TEXT NOT NULL DEFAULT '',
+      markup_pct REAL NOT NULL DEFAULT 10, insurance_pct REAL NOT NULL DEFAULT 5
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS budget_lines (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, category TEXT NOT NULL,
       description TEXT NOT NULL, estimate REAL NOT NULL, actual REAL NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL, section_code TEXT NOT NULL DEFAULT '',
+      item_code TEXT NOT NULL DEFAULT '', item_name TEXT NOT NULL DEFAULT '',
+      rate REAL NOT NULL DEFAULT 0, quantity REAL NOT NULL DEFAULT 1,
+      days REAL NOT NULL DEFAULT 1, tax_pct REAL NOT NULL DEFAULT 0,
+      is_na REAL NOT NULL DEFAULT 0, na_note TEXT NOT NULL DEFAULT ''
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS budget_versions (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
@@ -62,7 +70,11 @@ async function ensureSchema() {
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
       city TEXT NOT NULL, rate REAL NOT NULL, status TEXT NOT NULL,
       image_url TEXT NOT NULL, tags TEXT NOT NULL, note TEXT NOT NULL,
-      client_note TEXT NOT NULL, updated_at TEXT NOT NULL
+      client_note TEXT NOT NULL, updated_at TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Uncategorized', square_feet TEXT NOT NULL DEFAULT '—',
+      availability TEXT NOT NULL DEFAULT 'Availability Pending', blurb TEXT NOT NULL DEFAULT '',
+      gallery TEXT NOT NULL DEFAULT '[]', deleted_at TEXT NOT NULL DEFAULT '',
+      client_visible REAL NOT NULL DEFAULT 1
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS activities (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, kind TEXT NOT NULL,
@@ -85,6 +97,24 @@ async function ensureSchema() {
     db.prepare("CREATE INDEX IF NOT EXISTS module_project_idx ON module_records (project_id, module)"),
     db.prepare("CREATE INDEX IF NOT EXISTS file_project_idx ON file_assets (project_id)"),
   ]);
+  const additions = [
+    ["projects", "contact TEXT NOT NULL DEFAULT ''"], ["projects", "contact_email TEXT NOT NULL DEFAULT ''"],
+    ["projects", "billing_address TEXT NOT NULL DEFAULT ''"], ["projects", "po_no TEXT NOT NULL DEFAULT ''"],
+    ["projects", "budget_notes TEXT NOT NULL DEFAULT ''"], ["projects", "budget_changes TEXT NOT NULL DEFAULT ''"],
+    ["projects", "markup_pct REAL NOT NULL DEFAULT 10"], ["projects", "insurance_pct REAL NOT NULL DEFAULT 5"],
+    ["budget_lines", "section_code TEXT NOT NULL DEFAULT ''"], ["budget_lines", "item_code TEXT NOT NULL DEFAULT ''"],
+    ["budget_lines", "item_name TEXT NOT NULL DEFAULT ''"], ["budget_lines", "rate REAL NOT NULL DEFAULT 0"],
+    ["budget_lines", "quantity REAL NOT NULL DEFAULT 1"], ["budget_lines", "days REAL NOT NULL DEFAULT 1"],
+    ["budget_lines", "tax_pct REAL NOT NULL DEFAULT 0"], ["budget_lines", "is_na REAL NOT NULL DEFAULT 0"],
+    ["budget_lines", "na_note TEXT NOT NULL DEFAULT ''"], ["locations", "category TEXT NOT NULL DEFAULT 'Uncategorized'"],
+    ["locations", "square_feet TEXT NOT NULL DEFAULT '—'"], ["locations", "availability TEXT NOT NULL DEFAULT 'Availability Pending'"],
+    ["locations", "blurb TEXT NOT NULL DEFAULT ''"], ["locations", "gallery TEXT NOT NULL DEFAULT '[]'"],
+    ["locations", "deleted_at TEXT NOT NULL DEFAULT ''"], ["locations", "client_visible REAL NOT NULL DEFAULT 1"],
+  ];
+  for (const [table, column] of additions) {
+    try { await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column}`).run(); } catch { /* column already exists */ }
+  }
+  await db.prepare("UPDATE budget_lines SET rate = estimate, quantity = 1, days = 1 WHERE rate = 0 AND estimate > 0").run();
 }
 
 async function seedIfNeeded() {
@@ -93,20 +123,20 @@ async function seedIfNeeded() {
   const primary = await db.prepare("SELECT id FROM projects WHERE id = ? LIMIT 1").bind(FALLBACK_PROJECT_ID).first();
   if (!primary) {
     await db.batch([
-      db.prepare("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(FALLBACK_PROJECT_ID, "Aperture / Fall ’26", "Aperture Athletics", "AA-026", "Pre-production", "2026-09-14", "2026-09-17", "USD", createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("bl_prepro", FALLBACK_PROJECT_ID, "Pre-production", "Prep, casting & tech scouts", 28500, 21750, createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("bl_crew", FALLBACK_PROJECT_ID, "Crew", "Director, camera & production crew", 78500, 62340, createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("bl_equipment", FALLBACK_PROJECT_ID, "Equipment", "Camera, lighting & grip", 41200, 38960, createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("bl_locations", FALLBACK_PROJECT_ID, "Locations", "Permits, fees & site services", 32750, 19400, createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("bl_art", FALLBACK_PROJECT_ID, "Art department", "Set dressing, props & wardrobe", 38550, 24820, createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("bl_post", FALLBACK_PROJECT_ID, "Post-production", "Edit, color, sound & delivery", 29000, 9600, createdAt),
+      db.prepare("INSERT INTO projects (id, name, client, code, status, shoot_start, shoot_end, currency, created_at, contact, contact_email, billing_address, po_no, budget_notes, budget_changes, markup_pct, insurance_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(FALLBACK_PROJECT_ID, "Aperture / Fall ’26", "Aperture Athletics", "AA-026", "Pre-production", "2026-09-14", "2026-09-17", "USD", createdAt, "Maya Chen", "maya@aperture.test", "120 Franklin St, Brooklyn, NY 11222", "TBC", "Four-day photo and motion production across New York.", "Crew and camera package adjusted following agency review.", 10, 5),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("bl_prepro", FALLBACK_PROJECT_ID, "Pre-production", "Prep, casting & tech scouts", 28500, 21750, createdAt, "A", "A1", "Production prep", 28500, 1, 1, 0),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("bl_crew", FALLBACK_PROJECT_ID, "Crew", "Director, camera & production crew", 78500, 62340, createdAt, "B", "B1", "Production crew", 78500, 1, 1, 0),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("bl_equipment", FALLBACK_PROJECT_ID, "Equipment", "Camera, lighting & grip", 41200, 38960, createdAt, "C", "C1", "Equipment package", 41200, 1, 1, 0),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("bl_locations", FALLBACK_PROJECT_ID, "Locations", "Permits, fees & site services", 32750, 19400, createdAt, "D", "D1", "Location fees", 32750, 1, 1, 0),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("bl_art", FALLBACK_PROJECT_ID, "Art department", "Set dressing, props & wardrobe", 38550, 24820, createdAt, "E", "E1", "Art department", 38550, 1, 1, 0),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("bl_post", FALLBACK_PROJECT_ID, "Post-production", "Edit, color, sound & delivery", 29000, 9600, createdAt, "F", "F1", "Post-production", 29000, 1, 1, 0),
       db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("ex_1", FALLBACK_PROJECT_ID, "bl_equipment", "Prism Camera Co.", 14860, "2026-08-18", "matched", "Camera package deposit", createdAt),
       db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("ex_2", FALLBACK_PROJECT_ID, "bl_locations", "City Film Office", 4200, "2026-08-18", "needs_review", "Street closure permit", createdAt),
       db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("ex_3", FALLBACK_PROJECT_ID, "bl_art", "North & Pine Rentals", 6840, "2026-08-17", "matched", "Hero set furniture", createdAt),
       db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("ex_4", FALLBACK_PROJECT_ID, "bl_crew", "Collective Payroll", 18300, "2026-08-16", "pending", "Week one payroll reserve", createdAt),
-      db.prepare("INSERT INTO locations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("loc_1", FALLBACK_PROJECT_ID, "The Glass House", "Hudson Valley, NY", 7200, "shortlisted", "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1600&q=85", "Modern|Daylight|Hero option", "South-facing glass, easy load-in, quiet road access.", "Strongest architectural match for the campaign boards.", createdAt),
-      db.prepare("INSERT INTO locations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("loc_2", FALLBACK_PROJECT_ID, "Ridge Court", "Cold Spring, NY", 5400, "approved", "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=85", "Athletic|Mountain view|Backup", "Private court with clean sightlines and basecamp space.", "Approved for the movement sequence and sunrise setup.", createdAt),
-      db.prepare("INSERT INTO locations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("loc_3", FALLBACK_PROJECT_ID, "Foundry No. 4", "Brooklyn, NY", 8600, "review", "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1600&q=85", "Industrial|Rain cover|Power", "Large industrial floor, three-phase power, controllable daylight.", "Alternate for weather cover; art direction pass required.", createdAt),
+      db.prepare("INSERT INTO locations (id, project_id, name, city, rate, status, image_url, tags, note, client_note, updated_at, category, square_feet, availability, blurb, gallery, deleted_at, client_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1)").bind("loc_1", FALLBACK_PROJECT_ID, "The Glass House", "Hudson Valley, NY", 7200, "shortlisted", "https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1600&q=85", "Modern|Daylight|Hero option", "South-facing glass, easy load-in, quiet road access.", "Strongest architectural match for the campaign boards.", createdAt, "Residential", "6,800", "First hold available", "Sculptural modernist home with exceptional south-facing daylight.", JSON.stringify(["https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1600&q=85"])),
+      db.prepare("INSERT INTO locations (id, project_id, name, city, rate, status, image_url, tags, note, client_note, updated_at, category, square_feet, availability, blurb, gallery, deleted_at, client_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1)").bind("loc_2", FALLBACK_PROJECT_ID, "Ridge Court", "Cold Spring, NY", 5400, "approved", "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=85", "Athletic|Mountain view|Backup", "Private court with clean sightlines and basecamp space.", "Approved for the movement sequence and sunrise setup.", createdAt, "Athletic", "12,000", "Confirmed Sep 15", "Private court with clean sightlines and a dramatic mountain backdrop.", JSON.stringify(["https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1600&q=85"])),
+      db.prepare("INSERT INTO locations (id, project_id, name, city, rate, status, image_url, tags, note, client_note, updated_at, category, square_feet, availability, blurb, gallery, deleted_at, client_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', 1)").bind("loc_3", FALLBACK_PROJECT_ID, "Foundry No. 4", "Brooklyn, NY", 8600, "review", "https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1600&q=85", "Industrial|Rain cover|Power", "Large industrial floor, three-phase power, controllable daylight.", "Alternate for weather cover; art direction pass required.", createdAt, "Industrial", "18,500", "Second hold", "A large industrial floor with controllable daylight and three-phase power.", JSON.stringify(["https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1600&q=85"])),
       db.prepare("INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?)").bind("ac_1", FALLBACK_PROJECT_ID, "location", "Ridge Court approved for sequence 03", "Maya Chen · Client", "2026-08-19T13:18:00.000Z"),
       db.prepare("INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?)").bind("ac_2", FALLBACK_PROJECT_ID, "budget", "Camera package deposit reconciled", "Jamie Rivera", "2026-08-19T12:46:00.000Z"),
       db.prepare("INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?)").bind("ac_3", FALLBACK_PROJECT_ID, "expense", "Street closure permit flagged for review", "Alex Morgan", "2026-08-19T11:32:00.000Z"),
@@ -116,10 +146,10 @@ async function seedIfNeeded() {
   const secondary = await db.prepare("SELECT id FROM projects WHERE id = 'prj_morrow'").first();
   if (!secondary) {
     await db.batch([
-      db.prepare("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("prj_morrow", "Morrow / Holiday ’26", "Morrow House", "MH-041", "On hold", "2026-10-03", "2026-10-05", "USD", createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("mh_prepro", "prj_morrow", "Pre-production", "Casting, scout & prep", 18500, 9200, createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("mh_crew", "prj_morrow", "Crew", "Photo and motion units", 54500, 14750, createdAt),
-      db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind("mh_post", "prj_morrow", "Post-production", "Edit, grade & delivery", 22600, 0, createdAt),
+      db.prepare("INSERT INTO projects (id, name, client, code, status, shoot_start, shoot_end, currency, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("prj_morrow", "Morrow / Holiday ’26", "Morrow House", "MH-041", "On hold", "2026-10-03", "2026-10-05", "USD", createdAt),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("mh_prepro", "prj_morrow", "Pre-production", "Casting, scout & prep", 18500, 9200, createdAt, "A", "A1", "Production prep", 18500),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("mh_crew", "prj_morrow", "Crew", "Photo and motion units", 54500, 14750, createdAt, "B", "B1", "Production crew", 54500),
+      db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind("mh_post", "prj_morrow", "Post-production", "Edit, grade & delivery", 22600, 0, createdAt, "C", "C1", "Post-production", 22600),
       db.prepare("INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?)").bind("mh_ac1", "prj_morrow", "project", "Production placed on client hold", "Jamie Rivera", "2026-08-18T16:20:00.000Z"),
     ]);
   }
@@ -153,7 +183,7 @@ async function seedIfNeeded() {
       { id: "bl_art", category: "Art department", description: "Set dressing, props & wardrobe", estimate: 36550 },
       { id: "bl_post", category: "Post-production", description: "Edit, color, sound & delivery", estimate: 29000 },
     ];
-    const current = await db.prepare("SELECT id, category, description, estimate FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(FALLBACK_PROJECT_ID).all();
+    const current = await db.prepare("SELECT id, category, description, estimate, section_code, item_code, item_name, rate, quantity, days, tax_pct, is_na, na_note FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(FALLBACK_PROJECT_ID).all();
     await db.batch([
       db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind("bv_v6", FALLBACK_PROJECT_ID, "V6 · Agency review", "archived", JSON.stringify(v6), "2026-08-16T15:20:00.000Z"),
       db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind("bv_v7", FALLBACK_PROJECT_ID, "V7 · Confirmed estimate", "confirmed", JSON.stringify(current.results), "2026-08-19T12:00:00.000Z"),
@@ -225,26 +255,46 @@ export async function POST(request: Request) {
       const shootStart = textValue(body.shootStart, now.slice(0, 10));
       const shootEnd = textValue(body.shootEnd, shootStart);
       await db.batch([
-        db.prepare("INSERT INTO projects VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(projectId, name, client, code, "Planning", shootStart, shootEnd, "USD", now),
-        db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "Production", "Working production costs", 0, 0, now),
+        db.prepare("INSERT INTO projects (id, name, client, code, status, shoot_start, shoot_end, currency, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(projectId, name, client, code, "Planning", shootStart, shootEnd, "USD", now),
+        db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "Production", "Working production costs", 0, 0, now, "A", "A1", "Production", 0, 1, 1, 0),
         db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "V1 · Initial estimate", "draft", "[]", now),
       ]);
       await logActivity(projectId, "project", `${name} created`, actor);
     } else if (action === "add_budget_line") {
       const category = textValue(body.category, "New category");
       const description = textValue(body.description, "Production cost");
-      const estimate = numberValue(body.estimate);
-      await db.prepare("INSERT INTO budget_lines VALUES (?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, category, description, estimate, 0, now).run();
+      const rate = numberValue(body.rate ?? body.estimate);
+      const quantity = numberValue(body.quantity) || 1;
+      const days = numberValue(body.days) || 1;
+      const taxPct = numberValue(body.taxPct);
+      const estimate = numberValue(body.estimate) || rate * quantity * days * (1 + taxPct / 100);
+      const count = await db.prepare("SELECT COUNT(*) AS count FROM budget_lines WHERE project_id = ?").bind(projectId).first<{ count: number }>();
+      const sectionCode = textValue(body.sectionCode, String.fromCharCode(65 + Number(count?.count || 0)));
+      const itemCode = textValue(body.itemCode, `${sectionCode}1`);
+      await db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct, is_na, na_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), projectId, category, description, estimate, 0, now, sectionCode, itemCode, textValue(body.itemName, category), rate, quantity, days, taxPct, body.isNa === true ? 1 : 0, textValue(body.naNote)).run();
       await logActivity(projectId, "budget", `${category} added to the working budget`, actor);
     } else if (action === "update_budget_line") {
       const id = textValue(body.id);
       const category = textValue(body.category, "Production");
       const description = textValue(body.description, "Production cost");
       const estimate = numberValue(body.estimate);
-      await db.prepare("UPDATE budget_lines SET category = ?, description = ?, estimate = ? WHERE id = ? AND project_id = ?").bind(category, description, estimate, id, projectId).run();
+      await db.prepare("UPDATE budget_lines SET category = ?, description = ?, estimate = ?, section_code = ?, item_code = ?, item_name = ?, rate = ?, quantity = ?, days = ?, tax_pct = ?, is_na = ?, na_note = ? WHERE id = ? AND project_id = ?")
+        .bind(category, description, estimate, textValue(body.sectionCode), textValue(body.itemCode), textValue(body.itemName, category), numberValue(body.rate), numberValue(body.quantity) || 1, numberValue(body.days) || 1, numberValue(body.taxPct), body.isNa === true ? 1 : numberValue(body.isNa), textValue(body.naNote), id, projectId).run();
       await logActivity(projectId, "budget", `${category} updated in the working budget`, actor);
+    } else if (action === "delete_budget_line") {
+      await db.prepare("DELETE FROM budget_lines WHERE id = ? AND project_id = ?").bind(textValue(body.id), projectId).run();
+      await logActivity(projectId, "budget", "Budget line removed", actor);
+    } else if (action === "update_project_budget_meta") {
+      const allowed: Record<string, string> = { name: "name", client: "client", code: "code", contact: "contact", contactEmail: "contact_email", billingAddress: "billing_address", poNo: "po_no", budgetNotes: "budget_notes", budgetChanges: "budget_changes", markupPct: "markup_pct", insurancePct: "insurance_pct" };
+      const fields = Object.entries(allowed).filter(([input]) => body[input] !== undefined);
+      if (fields.length) {
+        const values = fields.map(([input]) => input === "markupPct" || input === "insurancePct" ? numberValue(body[input]) : textValue(body[input]));
+        await db.prepare(`UPDATE projects SET ${fields.map(([, column]) => `${column} = ?`).join(", ")} WHERE id = ?`).bind(...values, projectId).run();
+      }
+      await logActivity(projectId, "budget", "Estimate details updated", actor);
     } else if (action === "save_budget_version") {
-      const rows = await db.prepare("SELECT id, category, description, estimate FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(projectId).all();
+      const rows = await db.prepare("SELECT id, category, description, estimate, section_code, item_code, item_name, rate, quantity, days, tax_pct, is_na, na_note FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(projectId).all();
       const count = await db.prepare("SELECT COUNT(*) AS count FROM budget_versions WHERE project_id = ?").bind(projectId).first<{ count: number }>();
       const name = textValue(body.name, `V${Number(count?.count ?? 0) + 1} · Working estimate`);
       const confirm = body.confirm === true;
@@ -296,7 +346,10 @@ export async function POST(request: Request) {
       await logActivity(projectId, "expense", `Expense marked ${status.replaceAll("_", " ")}`, actor);
     } else if (action === "add_location") {
       const name = textValue(body.name, "Untitled location");
-      await db.prepare("INSERT INTO locations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, name, textValue(body.city, "Location TBD"), numberValue(body.rate), "review", textValue(body.imageUrl), "New scout|Review", textValue(body.note, "Scouting notes to follow."), "Awaiting client review.", now).run();
+      const imageUrl = textValue(body.imageUrl);
+      const gallery = Array.isArray(body.gallery) ? body.gallery.filter((item): item is string => typeof item === "string") : imageUrl ? [imageUrl] : [];
+      await db.prepare("INSERT INTO locations (id, project_id, name, city, rate, status, image_url, tags, note, client_note, updated_at, category, square_feet, availability, blurb, gallery, deleted_at, client_visible) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)")
+        .bind(crypto.randomUUID(), projectId, name, textValue(body.city, "Location TBD"), numberValue(body.rate), textValue(body.status, "review"), imageUrl || gallery[0] || "", textValue(body.tags, "New scout|Review"), textValue(body.note, "Scouting notes to follow."), textValue(body.clientNote, "Awaiting client review."), now, textValue(body.category, "Uncategorized"), textValue(body.squareFeet, "—"), textValue(body.availability, "Availability Pending"), textValue(body.blurb), JSON.stringify(gallery), body.clientVisible === false ? 0 : 1).run();
       await logActivity(projectId, "location", `${name} added to the location board`, actor);
     } else if (action === "update_location_status") {
       const id = textValue(body.id);
@@ -306,9 +359,37 @@ export async function POST(request: Request) {
       await logActivity(projectId, "location", `${location?.name ?? "Location"} marked ${status}`, actor);
     } else if (action === "update_location") {
       const id = textValue(body.id);
-      await db.prepare("UPDATE locations SET name = ?, city = ?, rate = ?, image_url = ?, tags = ?, note = ?, client_note = ?, updated_at = ? WHERE id = ? AND project_id = ?")
-        .bind(textValue(body.name, "Untitled location"), textValue(body.city, "Location TBD"), numberValue(body.rate), textValue(body.imageUrl), textValue(body.tags, "Review"), textValue(body.note), textValue(body.clientNote), now, id, projectId).run();
+      await db.prepare("UPDATE locations SET name = ?, city = ?, rate = ?, image_url = ?, tags = ?, note = ?, client_note = ?, category = ?, square_feet = ?, availability = ?, blurb = ?, updated_at = ? WHERE id = ? AND project_id = ?")
+        .bind(textValue(body.name, "Untitled location"), textValue(body.city, "Location TBD"), numberValue(body.rate), textValue(body.imageUrl), textValue(body.tags, "Review"), textValue(body.note), textValue(body.clientNote), textValue(body.category, "Uncategorized"), textValue(body.squareFeet, "—"), textValue(body.availability, "Availability Pending"), textValue(body.blurb), now, id, projectId).run();
       await logActivity(projectId, "location", `${textValue(body.name, "Location")} details updated`, actor);
+    } else if (action === "update_location_gallery") {
+      const gallery = Array.isArray(body.gallery) ? body.gallery.filter((item): item is string => typeof item === "string").slice(0, 100) : [];
+      await db.prepare("UPDATE locations SET gallery = ?, image_url = ?, updated_at = ? WHERE id = ? AND project_id = ?").bind(JSON.stringify(gallery), gallery[0] || "", now, textValue(body.id), projectId).run();
+      await logActivity(projectId, "location", "Location gallery updated", actor);
+    } else if (action === "set_location_visibility") {
+      await db.prepare("UPDATE locations SET client_visible = ?, updated_at = ? WHERE id = ? AND project_id = ?").bind(body.visible === true ? 1 : 0, now, textValue(body.id), projectId).run();
+      await logActivity(projectId, "location", body.visible === true ? "Location added to client view" : "Location hidden from client view", actor);
+    } else if (action === "delete_location") {
+      await db.prepare("UPDATE locations SET deleted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?").bind(now, now, textValue(body.id), projectId).run();
+      await logActivity(projectId, "location", "Location moved to recently deleted", actor);
+    } else if (action === "restore_location") {
+      await db.prepare("UPDATE locations SET deleted_at = '', updated_at = ? WHERE id = ? AND project_id = ?").bind(now, textValue(body.id), projectId).run();
+      await logActivity(projectId, "location", "Location restored", actor);
+    } else if (action === "purge_location") {
+      await db.prepare("DELETE FROM locations WHERE id = ? AND project_id = ?").bind(textValue(body.id), projectId).run();
+      await logActivity(projectId, "location", "Location permanently deleted", actor);
+    } else if (action === "import_locations") {
+      const folders = Array.isArray(body.folders) ? body.folders.slice(0, 80) : [];
+      const statements = [];
+      for (const folder of folders) {
+        if (!folder || typeof folder !== "object") continue;
+        const record = folder as Record<string, unknown>;
+        const gallery = Array.isArray(record.gallery) ? record.gallery.filter((item): item is string => typeof item === "string").slice(0, 100) : [];
+        const name = textValue(record.name, "Imported location");
+        statements.push(db.prepare("INSERT INTO locations (id, project_id, name, city, rate, status, image_url, tags, note, client_note, updated_at, category, square_feet, availability, blurb, gallery, deleted_at, client_visible) VALUES (?, ?, ?, ?, 0, 'review', ?, 'Imported|Review', ?, ?, ?, 'Uncategorized', '—', 'Availability Pending', '', ?, '', 1)").bind(crypto.randomUUID(), projectId, name, "Location TBD", gallery[0] || "", `Imported from ${name} image folder.`, "Awaiting client review.", now, JSON.stringify(gallery)));
+      }
+      if (statements.length) await db.batch(statements);
+      await logActivity(projectId, "location", `${statements.length} location folders imported`, actor);
     } else if (action === "update_project_status") {
       const status = textValue(body.status, "Pre-production");
       await db.prepare("UPDATE projects SET status = ? WHERE id = ?").bind(status, projectId).run();

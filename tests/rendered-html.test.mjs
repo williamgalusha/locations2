@@ -5,15 +5,19 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the BILL, INC. production control room instead of starter preview UI", async () => {
-  const [page, layout, portal, css, packageJson] = await Promise.all([
+  const [page, layout, portal, referenceUi, css, packageJson, credentialRoute, credentialAuth] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("app/production-portal.tsx", root), "utf8"),
+    readFile(new URL("app/reference-ui.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("package.json", root), "utf8"),
+    readFile(new URL("app/api/credential-login/route.ts", root), "utf8"),
+    readFile(new URL("app/credential-auth.ts", root), "utf8"),
   ]);
 
-  assert.match(page, /<ProductionPortal initialUser=\{user \? \{ name: user\.displayName, email: user\.email \} : null\} \/>/);
+  assert.match(page, /verifyPortalSession/);
+  assert.match(page, /<ProductionPortal initialUser=\{initialUser\} \/>/);
   assert.match(layout, /BILL, INC\. — Production Control/);
   assert.match(layout, /\/og\.png/);
   assert.match(portal, /CONTROL ROOM/);
@@ -21,24 +25,51 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /Headcount/);
   assert.match(portal, /Client Portal/);
   assert.match(portal, /Reconciliation/);
-  assert.match(portal, /PRODUCTION,.*UNDER CONTROL/s);
-  assert.match(portal, /SIGN IN WITH CHATGPT/);
-  assert.match(portal, /ENTER PRODUCTION CONTROL/);
+  assert.match(referenceUi, /cover-grid-original/);
+  assert.match(referenceUi, /CLICK TO LOG IN/);
+  assert.match(css, /cover-grid-stage span[^}]*font-weight:\s*700[^}]*line-height:\s*1[^}]*letter-spacing:\s*-\.02em/);
+  assert.match(css, /reference-login-panel img[^}]*height:\s*32px/);
+  assert.match(referenceUi, /reference-credential-form/);
+  assert.match(referenceUi, /LOG IN — CLIENT/);
+  assert.match(referenceUi, /LOG IN — PRODUCTION/);
+  assert.doesNotMatch(referenceUi, /PREVIEW (?:WORKSPACE|CLIENT PORTAL|PRODUCTION WORKSPACE)/);
+  assert.match(referenceUi, /clientOnly/);
+  assert.match(referenceUi, /PRODUCTION ESTIMATE/);
+  assert.match(referenceUi, /BILLING DETAILS/);
+  assert.match(referenceUi, /CHANGES SINCE PREVIOUS VERSION/);
+  assert.match(referenceUi, /ALL LINES/);
+  assert.match(referenceUi, /CHANGES ONLY/);
+  assert.match(referenceUi, /IMPORT FOLDERS/);
+  assert.match(referenceUi, /RECENTLY DELETED/);
+  assert.match(referenceUi, /PRESENTATION/);
+  assert.match(referenceUi, /data-deck-frame/);
+  assert.match(referenceUi, /DARK MODE/);
   assert.match(portal, /DARK MODE/);
   assert.doesNotMatch(portal, /mark:\s*"\d+"/);
   assert.doesNotMatch(css, /orange|coral|#ef5b3e/i);
+  assert.doesNotMatch(css, /grayscale\(1\)/);
+  assert.match(css, /client-theme-dark/);
+  assert.match(css, /location-deck-stage/);
+  assert.match(credentialRoute, /PORTAL_SESSION_COOKIE/);
+  assert.match(credentialRoute, /role === "client"/);
+  assert.match(credentialAuth, /PORTAL_PASSWORD/);
+  assert.match(credentialAuth, /CLIENT_PORTAL_PASSWORD/);
+  assert.doesNotMatch(credentialAuth + credentialRoute, /williamblake/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
-  assert.doesNotMatch(page + layout + portal, /codex-preview|SkeletonPreview/);
+  assert.match(css, /data-print-surface="budget"/);
+  assert.doesNotMatch(page + layout + portal + referenceUi, /codex-preview|SkeletonPreview/);
   await assert.rejects(access(new URL("app/_sites-preview/SkeletonPreview.tsx", root)));
+  await access(new URL("public/bill-inc.png", root));
 });
 
 test("includes durable records, file storage, budget history, and synchronized production actions", async () => {
-  const [hosting, initialMigration, expandedMigration, budgetMigration, route, fileRoute] = await Promise.all([
+  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, route, fileRoute] = await Promise.all([
     readFile(new URL(".openai/hosting.json", root), "utf8"),
     readFile(new URL("drizzle/0000_cute_genesis.sql", root), "utf8"),
     readFile(new URL("drizzle/0001_typical_sabra.sql", root), "utf8"),
     readFile(new URL("drizzle/0002_blue_proudstar.sql", root), "utf8"),
+    readFile(new URL("drizzle/0003_overconfident_northstar.sql", root), "utf8"),
     readFile(new URL("app/api/portal/route.ts", root), "utf8"),
     readFile(new URL("app/api/files/route.ts", root), "utf8"),
   ]);
@@ -51,7 +82,8 @@ test("includes durable records, file storage, budget history, and synchronized p
     assert.ok(expandedMigration.includes("CREATE TABLE `" + table + "`"));
   }
   assert.ok(budgetMigration.includes("CREATE TABLE `budget_versions`"));
-  for (const action of ["create_project", "add_budget_line", "update_budget_line", "save_budget_version", "set_budget_version_status", "add_expense", "import_expenses", "add_location", "update_location", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_location_status", "update_project_status"]) {
+  for (const column of ["section_code", "item_code", "contact_email", "gallery", "deleted_at", "client_visible"]) assert.match(restoredMigration, new RegExp(column));
+  for (const action of ["create_project", "add_budget_line", "update_budget_line", "delete_budget_line", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_location_status", "update_project_status"]) {
     assert.match(route, new RegExp(action));
   }
   assert.match(fileRoute, /bucket\(\)\.put/);

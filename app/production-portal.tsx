@@ -2,22 +2,24 @@
 
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ReferenceBudgetView, ReferenceClientPortal, ReferenceLocationsView, ReferenceLoginScreen } from "./reference-ui";
+import type { PortalRole } from "./credential-auth";
 
-type Project = { id: string; name: string; client: string; code: string; status: string; shoot_start: string; shoot_end: string; currency: string };
-type BudgetLine = { id: string; category: string; description: string; estimate: number; actual: number };
-type BudgetSnapshot = Pick<BudgetLine, "id" | "category" | "description" | "estimate">;
-type BudgetVersion = { id: string; name: string; status: string; snapshot: BudgetSnapshot[]; created_at: string };
+export type Project = { id: string; name: string; client: string; code: string; status: string; shoot_start: string; shoot_end: string; currency: string; contact?: string; contact_email?: string; billing_address?: string; po_no?: string; budget_notes?: string; budget_changes?: string; markup_pct?: number; insurance_pct?: number };
+export type BudgetLine = { id: string; category: string; description: string; estimate: number; actual: number; section_code?: string; item_code?: string; item_name?: string; rate?: number; quantity?: number; days?: number; tax_pct?: number; is_na?: number; na_note?: string };
+export type BudgetSnapshot = Pick<BudgetLine, "id" | "category" | "description" | "estimate" | "section_code" | "item_code" | "item_name" | "rate" | "quantity" | "days" | "tax_pct" | "is_na" | "na_note">;
+export type BudgetVersion = { id: string; name: string; status: string; snapshot: BudgetSnapshot[]; created_at: string };
 type Expense = { id: string; budget_line_id: string; vendor: string; amount: number; spend_date: string; status: string; memo: string };
-type Location = { id: string; name: string; city: string; rate: number; status: string; image_url: string; tags: string; note: string; client_note: string };
+export type Location = { id: string; name: string; city: string; rate: number; status: string; image_url: string; tags: string; note: string; client_note: string; category?: string; square_feet?: string; availability?: string; blurb?: string; gallery?: string | string[]; deleted_at?: string; client_visible?: number };
 type Activity = { id: string; kind: string; message: string; actor: string; created_at: string };
 type RecordData = Record<string, string>;
 type ModuleRecord = { id: string; module: string; data: RecordData; created_at: string; updated_at: string };
 type FileAsset = { id: string; object_key: string; filename: string; content_type: string; size: number; category: string; status: string; created_at: string };
-type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[] };
+export type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[] };
 type View = "control" | "budget" | "reconcile" | "backup" | "cc" | "production" | "crew" | "schedule" | "travel" | "callsheet" | "locations" | "client" | "activity";
 type Composer = "budget" | "expense" | "location" | "project" | "production" | "crew" | "schedule" | "travel" | null;
-type User = { name: string; email: string } | null;
-type Mutate = (payload: Record<string, unknown>, success: string) => Promise<void>;
+export type User = { name: string; email: string; credential?: boolean; role?: PortalRole } | null;
+export type Mutate = (payload: Record<string, unknown>, success: string) => Promise<void>;
 
 const groups: { label: string; items: { id: View; label: string }[] }[] = [
   { label: "Workspace", items: [{ id: "control", label: "Control Room" }] },
@@ -50,17 +52,16 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   const [userMenu, setUserMenu] = useState(false);
   const [clientPreview, setClientPreview] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
-  const [isLocal, setIsLocal] = useState(false);
   const filePicker = useRef<HTMLInputElement>(null);
   const ccPicker = useRef<HTMLInputElement>(null);
   const travelPicker = useRef<HTMLInputElement>(null);
-  const user = initialUser ?? previewUser;
+  const user = previewUser ?? initialUser;
   const localPreview = !initialUser && Boolean(previewUser);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("bill-theme");
     const next = stored === "dark" || stored === "light" ? stored : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    setTheme(next); document.documentElement.dataset.theme = next; setIsLocal(["localhost", "127.0.0.1"].includes(window.location.hostname));
+    setTheme(next); document.documentElement.dataset.theme = next;
   }, []);
   useEffect(() => { if (user) loadProject(); }, [Boolean(user)]);
 
@@ -130,8 +131,25 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
   function openView(view: View) { setActive(view); setQuery(""); if (view !== "client") setClientPreview(false); }
 
-  if (!entered) return <LoginScreen user={user} isLocal={isLocal} enter={() => setEntered(true)} preview={() => { setPreviewUser({ name: "Jamie Rivera", email: "Local preview" }); setEntered(true); }} />;
-  if (!user) return <LoginScreen user={null} isLocal={isLocal} enter={() => undefined} preview={() => { setPreviewUser({ name: "Jamie Rivera", email: "Local preview" }); setEntered(true); }} />;
+  async function credentialLogin(username: string, password: string, role: PortalRole) {
+    const response = await fetch("/api/credential-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, role }) });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "That login could not be completed.");
+    setPreviewUser(payload.user); setActive(role === "client" ? "client" : "control"); setClientPreview(role === "client"); setEntered(true);
+  }
+
+  function enterFor(role: PortalRole = user?.role === "client" ? "client" : "production") {
+    setActive(role === "client" ? "client" : "control"); setClientPreview(role === "client"); setEntered(true);
+  }
+
+  async function logOut() {
+    if (user?.credential) await fetch("/api/credential-login", { method: "DELETE" });
+    setPreviewUser(null); setData(null); setEntered(false); setUserMenu(false);
+    if (initialUser?.credential) window.location.reload();
+  }
+
+  if (!entered) return <ReferenceLoginScreen user={user} enter={enterFor} credentialLogin={credentialLogin} />;
+  if (!user) return <ReferenceLoginScreen user={null} enter={enterFor} credentialLogin={credentialLogin} />;
   if (!data && !error) return <div className="portal-loading"><span>B,</span><p>OPENING PRODUCTION WORKSPACE…</p></div>;
   if (!data) return <div className="portal-error"><span>BILL, INC.</span><h1>THE PRODUCTION COULD NOT OPEN.</h1><p>{error}</p><button onClick={() => loadProject()}>TRY AGAIN</button></div>;
 
@@ -140,12 +158,14 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   const expenses = data.expenses.filter((expense) => `${expense.vendor} ${expense.memo}`.toLowerCase().includes(search));
   const locations = data.locations.filter((location) => `${location.name} ${location.city} ${location.tags}`.toLowerCase().includes(search));
 
+  if (user.role === "client") return <ReferenceClientPortal data={data} totals={totals} preview setPreview={(value) => { if (!value) void logOut(); }} publish={mutate} clientOnly />;
+
   return <main className="portal-shell">
     <aside className="sidebar">
-      <button className="brand" onClick={() => openView("control")}><span className="brand-word">BILL, INC.</span><small>PRODUCTION CONTROL</small></button>
+      <button className="brand" onClick={() => openView("control")}><img src="/bill-inc.png" alt="BILL, INC." /><small>PRODUCTION CONTROL</small></button>
       <div className="side-project"><span>{data.project.code}</span><strong>{data.project.name}</strong><small>{data.project.client}</small></div>
       <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && data.expenses.some((expense) => expense.status === "needs_review") && <i>{data.expenses.filter((expense) => expense.status === "needs_review").length}</i>}</button>)}</div>)}</nav>
-      <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserMenu((value) => !value)}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>•••</b></button>{userMenu && <div className="side-user-menu"><button onClick={toggleTheme}>{theme === "light" ? "DARK MODE" : "LIGHT MODE"}</button>{localPreview ? <button onClick={() => { setPreviewUser(null); setData(null); setEntered(false); setUserMenu(false); }}>EXIT PREVIEW →</button> : <a href="/signout-with-chatgpt?return_to=/">LOG OUT →</a>}</div>}</div>
+      <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserMenu((value) => !value)}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>•••</b></button>{userMenu && <div className="side-user-menu"><button onClick={toggleTheme}>{theme === "light" ? "DARK MODE" : "LIGHT MODE"}</button>{localPreview || user.credential ? <button onClick={logOut}>LOG OUT →</button> : <a href="/signout-with-chatgpt?return_to=/">LOG OUT →</a>}</div>}</div>
     </aside>
 
     <section className="workspace">
@@ -159,7 +179,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
       <div className="content">
         {error && <div className="inline-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
         {active === "control" && <ControlRoom data={data} totals={totals} openView={openView} openComposer={setComposer} mutate={mutate} />}
-        {active === "budget" && <BudgetView data={data} lines={lines} totals={totals} expenses={data.expenses} openComposer={setComposer} mutate={mutate} />}
+        {active === "budget" && <ReferenceBudgetView data={data} lines={lines} totals={totals} expenses={data.expenses} openComposer={() => setComposer("budget")} mutate={mutate} />}
         {active === "reconcile" && <ReconcileView expenses={expenses} lines={data.budgetLines} openComposer={setComposer} mutate={mutate} />}
         {active === "backup" && <BackupView files={data.files} filePicker={filePicker} uploadBackup={uploadBackup} removeFile={removeFile} saving={saving} />}
         {active === "cc" && <CCView expenses={expenses} lines={data.budgetLines} ccPicker={ccPicker} importStatement={importStatement} openComposer={setComposer} mutate={mutate} />}
@@ -168,8 +188,8 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         {active === "travel" && <TravelView records={moduleRows(data, "travel")} picker={travelPicker} open={() => setComposer("travel")} mutate={mutate} />}
         {active === "schedule" && <ScheduleView records={moduleRows(data, "schedule")} open={() => setComposer("schedule")} mutate={mutate} publish={() => mutate({ action: "publish_client_item", kind: "Schedule", label: `${data.project.name} · Shooting Schedule` }, "Schedule pushed to client portal")} />}
         {active === "callsheet" && <CallSheet project={data.project} crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} travel={moduleRows(data, "travel")} locations={data.locations} publish={() => mutate({ action: "publish_client_item", kind: "Call Sheet", label: `${data.project.name} · Day 01 Call Sheet` }, "Call sheet pushed to client portal")} />}
-        {active === "locations" && <LocationsView project={data.project} locations={locations} open={() => setComposer("location")} mutate={mutate} />}
-        {active === "client" && <ClientPortal data={data} totals={totals} preview={clientPreview} setPreview={setClientPreview} publish={mutate} />}
+        {active === "locations" && <ReferenceLocationsView project={data.project} locations={locations} open={() => setComposer("location")} mutate={mutate} />}
+        {active === "client" && <ReferenceClientPortal data={data} totals={totals} preview={clientPreview} setPreview={setClientPreview} publish={mutate} />}
         {active === "activity" && <ActivityView activities={data.activities} />}
       </div>
     </section>

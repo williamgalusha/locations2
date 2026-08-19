@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       database().prepare("INSERT INTO file_assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, projectId, objectKey, file.name, file.type || "application/octet-stream", file.size, category, "To code", now),
       database().prepare("INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "file", `${file.name} uploaded to backup`, "Jamie Rivera", now),
     ]);
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, key: objectKey, url: `/api/files?key=${encodeURIComponent(objectKey)}` });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Upload failed." }, { status: 500 });
   }
