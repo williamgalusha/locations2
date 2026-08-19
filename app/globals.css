@@ -70,7 +70,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 :root:not([data-theme="dark"]) .sidebar { border-right: 1px solid #c7c7c3; background: #e7e7e4; color: #111; }
 :root:not([data-theme="dark"]) .brand { color: #111; }
-:root:not([data-theme="dark"]) .brand img { filter: none; }
+:root:not([data-theme="dark"]) .brand img { filter: none; mix-blend-mode: multiply; }
 :root:not([data-theme="dark"]) .brand small, :root:not([data-theme="dark"]) .side-project span, :root:not([data-theme="dark"]) .side-project small { color: #666; }
 :root:not([data-theme="dark"]) .side-project { border-color: #c7c7c3; }
 :root:not([data-theme="dark"]) .nav-group > p { color: #777; }
