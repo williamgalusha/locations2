@@ -507,6 +507,24 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .estimate-add-section { width: 100%; min-height: 32px; margin-top: 13px; border: 1px dashed #aaa; background: #fff; color: #444; font-size: 6px; font-weight: 800; cursor: pointer; }
 .estimate-thanks { margin: 50px 0 45px; font-family: "Brush Script MT", cursive; font-size: 36px; transform: rotate(-4deg); }
 .estimate-footer { display: flex; justify-content: space-between; padding-top: 9px; border-top: 1px solid #111; font-size: 5px; font-weight: 800; letter-spacing: .08em; }
+
+@media screen {
+  :root[data-theme="dark"] .budget-document { border-color: #444; background: #171717; color: #f2f2f0; }
+  :root[data-theme="dark"] .estimate-header, :root[data-theme="dark"] .estimate-summary > footer, :root[data-theme="dark"] .estimate-summary .estimate-grand, :root[data-theme="dark"] .estimate-section > footer, :root[data-theme="dark"] .estimate-footer { border-color: #eeeeec; }
+  :root[data-theme="dark"] .estimate-header img { filter: invert(1); }
+  :root[data-theme="dark"] .estimate-header p, :root[data-theme="dark"] .estimate-details label, :root[data-theme="dark"] .estimate-columns { color: #aaa; }
+  :root[data-theme="dark"] .estimate-details, :root[data-theme="dark"] .estimate-copy { border-color: #494949; }
+  :root[data-theme="dark"] .estimate-details label, :root[data-theme="dark"] .estimate-summary > div, :root[data-theme="dark"] .estimate-summary > footer > div, :root[data-theme="dark"] .estimate-line { border-color: #333; }
+  :root[data-theme="dark"] .estimate-details input, :root[data-theme="dark"] .estimate-copy textarea, :root[data-theme="dark"] .estimate-line input, :root[data-theme="dark"] .estimate-summary input { color: #f2f2f0; }
+  :root[data-theme="dark"] .estimate-summary > div a { color: #f2f2f0; }
+  :root[data-theme="dark"] .estimate-summary input { border-color: #666; background: transparent; }
+  :root[data-theme="dark"] .estimate-section > header { background: #eeeeec; color: #111; }
+  :root[data-theme="dark"] .estimate-section > header span { color: #555; }
+  :root[data-theme="dark"] .estimate-line-changed { background: #292929; box-shadow: inset 2px 0 #aaa; }
+  :root[data-theme="dark"] .estimate-line input:focus { border-bottom-color: #eeeeec; }
+  :root[data-theme="dark"] .estimate-add-section { border-color: #666; background: #171717; color: #ccc; }
+}
+
 .budget-history { width: min(100%, 816px); margin: 0 auto; border-top: 1px solid var(--line-strong); }
 .budget-history h2 { font-size: 8px; letter-spacing: .12em; }
 .budget-history > div { display: grid; grid-template-columns: 1.5fr .5fr .6fr auto; gap: 8px; align-items: center; min-height: 38px; border-top: 1px solid var(--line); font-size: 7px; }
