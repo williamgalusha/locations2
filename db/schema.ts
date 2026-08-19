@@ -108,5 +108,21 @@ export const fileAssets = sqliteTable("file_assets", {
   size: real("size").notNull(),
   category: text("category").notNull(),
   status: text("status").notNull(),
+  budgetLineId: text("budget_line_id").notNull().default(""),
+  expenseId: text("expense_id").notNull().default(""),
+  vendor: text("vendor").notNull().default(""),
+  amount: real("amount").notNull().default(0),
+  spendDate: text("spend_date").notNull().default(""),
+  memo: text("memo").notNull().default(""),
+  createdAt: text("created_at").notNull(),
+});
+
+export const budgetAudits = sqliteTable("budget_audits", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull(),
+  source: text("source").notNull(),
+  status: text("status").notNull(),
+  summary: text("summary").notNull(),
+  notes: text("notes").notNull(),
   createdAt: text("created_at").notNull(),
 });
