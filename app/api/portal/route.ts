@@ -413,6 +413,20 @@ export async function POST(request: Request) {
       const status = textValue(body.status, "pending");
       await db.prepare("UPDATE expenses SET status = ? WHERE id = ? AND project_id = ?").bind(status, textValue(body.id), projectId).run();
       await logActivity(projectId, "expense", `Expense marked ${status.replaceAll("_", " ")}`, actor);
+    } else if (action === "update_expense_allocation") {
+      const id = textValue(body.id);
+      const budgetLineId = textValue(body.budgetLineId);
+      const expense = await db.prepare("SELECT budget_line_id, amount, vendor FROM expenses WHERE id = ? AND project_id = ?").bind(id, projectId).first<{ budget_line_id: string; amount: number; vendor: string }>();
+      const budgetLine = await db.prepare("SELECT item_code, item_name, category FROM budget_lines WHERE id = ? AND project_id = ?").bind(budgetLineId, projectId).first<{ item_code: string; item_name: string; category: string }>();
+      if (!expense || !budgetLine) throw new Error("Choose a valid budget line for this expense.");
+      if (expense.budget_line_id !== budgetLineId) {
+        await db.batch([
+          db.prepare("UPDATE expenses SET budget_line_id = ? WHERE id = ? AND project_id = ?").bind(budgetLineId, id, projectId),
+          db.prepare("UPDATE budget_lines SET actual = MAX(0, actual - ?) WHERE id = ? AND project_id = ?").bind(Number(expense.amount), expense.budget_line_id, projectId),
+          db.prepare("UPDATE budget_lines SET actual = actual + ? WHERE id = ? AND project_id = ?").bind(Number(expense.amount), budgetLineId, projectId),
+        ]);
+        await logActivity(projectId, "expense", `${expense.vendor} allocated to ${budgetLine.item_code || budgetLine.item_name || budgetLine.category}`, actor);
+      }
     } else if (action === "add_location") {
       const name = textValue(body.name, "Untitled location");
       const imageUrl = textValue(body.imageUrl);
