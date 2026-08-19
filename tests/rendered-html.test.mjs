@@ -58,6 +58,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /data-deck-frame/);
   assert.match(referenceUi, /DARK MODE/);
   assert.match(portal, /DARK MODE/);
+  assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.sidebar[^}]*background:\s*#e7e7e4[^}]*color:\s*#111/);
+  assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.nav-item[^}]*color:\s*#333/);
+  assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.brand img[^}]*filter:\s*none/);
   assert.doesNotMatch(portal, /mark:\s*"\d+"/);
   assert.doesNotMatch(css, /orange|coral|#ef5b3e/i);
   assert.doesNotMatch(css, /grayscale\(1\)/);

@@ -71,6 +71,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .side-user-menu a, .side-user-menu button { display: block; width: 100%; padding: 10px; border: 0; border-top: 1px solid #333; background: transparent; color: #fff; font-size: 7px; font-weight: 800; text-align: left; text-decoration: none; cursor: pointer; }
 .side-user-menu > :first-child { border-top: 0; }
 
+:root:not([data-theme="dark"]) .sidebar { border-right: 1px solid #c7c7c3; background: #e7e7e4; color: #111; }
+:root:not([data-theme="dark"]) .brand { color: #111; }
+:root:not([data-theme="dark"]) .brand img { filter: none; }
+:root:not([data-theme="dark"]) .brand small, :root:not([data-theme="dark"]) .side-project span, :root:not([data-theme="dark"]) .side-project small { color: #666; }
+:root:not([data-theme="dark"]) .side-project { border-color: #c7c7c3; }
+:root:not([data-theme="dark"]) .nav-group > p { color: #777; }
+:root:not([data-theme="dark"]) .nav-item { color: #333; }
+:root:not([data-theme="dark"]) .nav-item:hover { background: #dcdcd8; color: #111; }
+:root:not([data-theme="dark"]) .nav-item.active { background: #fff; color: #111; }
+:root:not([data-theme="dark"]) .nav-item.active::before { background: #111; }
+:root:not([data-theme="dark"]) .nav-item i { background: #111; color: #fff; }
+:root:not([data-theme="dark"]) .sidebar-bottom { border-color: #c7c7c3; }
+:root:not([data-theme="dark"]) .budget-meter { background: #c7c7c3; }
+:root:not([data-theme="dark"]) .budget-meter span { background: #333; }
+:root:not([data-theme="dark"]) .sidebar-bottom > p { color: #666; }
+:root:not([data-theme="dark"]) .sidebar-bottom > p b { color: #333; }
+:root:not([data-theme="dark"]) .side-user { border-color: #bdbdb9; background: #f4f4f2; color: #111; }
+:root:not([data-theme="dark"]) .side-user > span:first-child { background: #111; color: #fff; }
+:root:not([data-theme="dark"]) .side-user small, :root:not([data-theme="dark"]) .side-user b { color: #666; }
+:root:not([data-theme="dark"]) .side-user-menu { border-color: #aaa; background: #f4f4f2; box-shadow: 0 14px 35px rgba(0,0,0,.16); }
+:root:not([data-theme="dark"]) .side-user-menu a, :root:not([data-theme="dark"]) .side-user-menu button { border-color: #ccc; color: #111; }
+:root:not([data-theme="dark"]) .side-user-menu a:hover, :root:not([data-theme="dark"]) .side-user-menu button:hover { background: #dfdfdc; }
+
 .workspace { min-width: 0; background: var(--bg); }
 .topbar { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: minmax(200px, 1fr) minmax(260px, 420px) minmax(220px, 1fr); align-items: center; min-height: 58px; padding: 7px 20px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 95%, transparent); backdrop-filter: blur(12px); }
 .project-switch-wrap { position: relative; }
