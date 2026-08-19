@@ -14,8 +14,10 @@ export type Location = { id: string; name: string; city: string; rate: number; s
 type Activity = { id: string; kind: string; message: string; actor: string; created_at: string };
 type RecordData = Record<string, string>;
 type ModuleRecord = { id: string; module: string; data: RecordData; created_at: string; updated_at: string };
-type FileAsset = { id: string; object_key: string; filename: string; content_type: string; size: number; category: string; status: string; created_at: string };
-export type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[] };
+type FileAsset = { id: string; object_key: string; filename: string; content_type: string; size: number; category: string; status: string; budget_line_id?: string; expense_id?: string; vendor?: string; amount?: number; spend_date?: string; memo?: string; created_at: string };
+type AuditNote = { severity: "critical" | "review" | "info"; title: string; detail: string; line_code?: string; amount?: number };
+type BudgetAudit = { id: string; source: string; status: string; summary: string; notes: string | AuditNote[]; created_at: string };
+export type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[]; audits: BudgetAudit[] };
 type View = "control" | "budget" | "reconcile" | "backup" | "cc" | "production" | "crew" | "schedule" | "travel" | "callsheet" | "locations" | "client" | "activity";
 type Composer = "budget" | "expense" | "location" | "project" | "production" | "crew" | "schedule" | "travel" | null;
 export type User = { name: string; email: string; credential?: boolean; role?: PortalRole } | null;
@@ -60,6 +62,8 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   const [active, setActive] = useState<View>("control");
   const [composer, setComposer] = useState<Composer>(null);
   const [saving, setSaving] = useState(false);
+  const [auditing, setAuditing] = useState(false);
+  const [pendingBackup, setPendingBackup] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [query, setQuery] = useState("");
@@ -89,7 +93,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     setError("");
     try {
       const response = await fetch(`/api/portal${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`);
-      const payload = await response.json();
+      const payload = await response.json() as PortalData & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Could not load production data.");
       setData(payload); setProjectMenu(false);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load production data."); }
@@ -107,29 +111,51 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     setSaving(true); setError("");
     try {
       const response = await fetch("/api/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, projectId: data?.project.id }) });
-      const next = await response.json();
+      const next = await response.json() as PortalData & { error?: string };
       if (!response.ok) throw new Error(next.error ?? "That change could not be saved.");
       setData(next); setComposer(null); setToast(success); window.setTimeout(() => setToast(""), 2600);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "That change could not be saved."); }
     finally { setSaving(false); }
   }
 
-  async function uploadBackup(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0]; if (!file || !data) return;
+  function chooseBackup(file?: File) {
+    if (!file) return;
+    setPendingBackup(file);
+  }
+
+  function uploadBackup(event: ChangeEvent<HTMLInputElement>) {
+    chooseBackup(event.target.files?.[0]); event.target.value = "";
+  }
+
+  async function saveBackupAllocation(values: Record<string, string>) {
+    if (!pendingBackup || !data) return;
     setSaving(true);
     try {
-      const form = new FormData(); form.set("file", file); form.set("projectId", data.project.id); form.set("category", "Backup");
-      const response = await fetch("/api/files", { method: "POST", body: form }); const result = await response.json();
+      const form = new FormData(); form.set("file", pendingBackup); form.set("projectId", data.project.id); form.set("category", "Backup");
+      Object.entries(values).forEach(([key, value]) => form.set(key, value));
+      const response = await fetch("/api/files", { method: "POST", body: form }); const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Upload failed.");
-      await loadProject(data.project.id); setToast(`${file.name} uploaded`); window.setTimeout(() => setToast(""), 2600);
+      setPendingBackup(null); await loadProject(data.project.id); setToast(`${pendingBackup.name} uploaded and allocated`); window.setTimeout(() => setToast(""), 2600);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed."); }
-    finally { setSaving(false); event.target.value = ""; }
+    finally { setSaving(false); }
   }
 
   async function removeFile(file: FileAsset) {
     if (!data) return;
     const response = await fetch("/api/files", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: file.id, key: file.object_key, projectId: data.project.id }) });
     if (response.ok) { await loadProject(data.project.id); setToast("File removed"); window.setTimeout(() => setToast(""), 2200); }
+  }
+
+  async function auditBudget() {
+    if (!data) return;
+    setAuditing(true); setError("");
+    try {
+      const response = await fetch("/api/audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: data.project.id }) });
+      const result = await response.json() as { error?: string; aiConfigured?: boolean };
+      if (!response.ok) throw new Error(result.error ?? "Budget audit failed.");
+      await loadProject(data.project.id); setToast(result.aiConfigured ? "OpenAI budget audit complete" : "Budget audit complete · AI key not yet connected"); window.setTimeout(() => setToast(""), 3200);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Budget audit failed."); }
+    finally { setAuditing(false); }
   }
 
   async function importStatement(event: ChangeEvent<HTMLInputElement>) {
@@ -148,7 +174,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
   async function credentialLogin(username: string, password: string, role: PortalRole) {
     const response = await fetch("/api/credential-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, role }) });
-    const payload = await response.json();
+    const payload = await response.json() as { error?: string; user: User };
     if (!response.ok) throw new Error(payload.error || "That login could not be completed.");
     setPreviewUser(payload.user); setActive(role === "client" ? "client" : "control"); setClientPreview(role === "client"); setEntered(true);
   }
@@ -194,9 +220,9 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
       <div className="content">
         {error && <div className="inline-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
         {active === "control" && <ControlRoom data={data} totals={totals} openView={openView} openComposer={setComposer} mutate={mutate} />}
-        {active === "budget" && <ReferenceBudgetView data={data} lines={lines} totals={totals} expenses={data.expenses} openComposer={() => setComposer("budget")} mutate={mutate} />}
+        {active === "budget" && <ReferenceBudgetView data={data} lines={lines} totals={totals} expenses={data.expenses} openComposer={() => setComposer("budget")} mutate={mutate} auditBudget={auditBudget} auditing={auditing} />}
         {active === "reconcile" && <ReconcileView expenses={expenses} lines={data.budgetLines} openComposer={setComposer} mutate={mutate} />}
-        {active === "backup" && <BackupView files={data.files} filePicker={filePicker} uploadBackup={uploadBackup} removeFile={removeFile} saving={saving} />}
+        {active === "backup" && <BackupView files={data.files} expenses={data.expenses} lines={data.budgetLines} audits={data.audits} filePicker={filePicker} uploadBackup={uploadBackup} chooseBackup={chooseBackup} removeFile={removeFile} mutate={mutate} auditBudget={auditBudget} saving={saving} auditing={auditing} />}
         {active === "cc" && <CCView expenses={expenses} lines={data.budgetLines} ccPicker={ccPicker} importStatement={importStatement} openComposer={setComposer} mutate={mutate} />}
         {active === "production" && <RecordView title="Production Sheet" kicker="Operations · Live list" copy="Open items, vendor decisions, and wrap-book notes in one shared sheet." records={moduleRows(data, "production")} columns={["section", "item", "owner", "status"]} open={() => setComposer("production")} remove={(id) => mutate({ action: "delete_module_record", id }, "Production item removed")} />}
         {active === "crew" && <HeadcountView crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} open={() => setComposer("crew")} mutate={mutate} />}
@@ -210,6 +236,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     </section>
 
     {composer && <ComposerModal type={composer} lines={data.budgetLines} saving={saving} close={() => setComposer(null)} submit={mutate} />}
+    {pendingBackup && <BackupAllocationModal file={pendingBackup} lines={data.budgetLines} saving={saving} close={() => setPendingBackup(null)} upload={saveBackupAllocation} />}
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
   </main>;
 }
@@ -221,7 +248,7 @@ function LoginScreen({ user, isLocal, enter, preview }: { user: User; isLocal: b
 function ControlRoom({ data, totals, openView, openComposer, mutate }: { data: PortalData; totals: { estimate: number; committed: number; actual: number; remaining: number; percent: number }; openView: (view: View) => void; openComposer: (composer: Composer) => void; mutate: Mutate }) {
   const review = data.expenses.filter((expense) => expense.status === "needs_review").length;
   const modules: { tag: string; title: string; view: View; count: string }[] = [
-    { tag: "Finance", title: "Budget", view: "budget", count: `${data.budgetVersions.length} versions` }, { tag: "Finance", title: "Reconciliation", view: "reconcile", count: `${review} to review` }, { tag: "Finance", title: "Backup", view: "backup", count: `${data.files.length} files` }, { tag: "Finance", title: "CC Log", view: "cc", count: `${data.expenses.length} charges` },
+    { tag: "Finance", title: "Budget", view: "budget", count: `${data.budgetVersions.length} versions` }, { tag: "Finance", title: "Reconciliation", view: "reconcile", count: `${review} to review` }, { tag: "Finance", title: "Backup", view: "backup", count: `${data.files.filter((file) => file.category.toLowerCase() === "backup").length} files` }, { tag: "Finance", title: "CC Log", view: "cc", count: `${data.expenses.length} charges` },
     { tag: "Operations", title: "Production Sheet", view: "production", count: `${moduleRows(data, "production").length} items` }, { tag: "Operations", title: "Headcount", view: "crew", count: `${moduleRows(data, "crew").length} people` }, { tag: "Operations", title: "Schedule", view: "schedule", count: `${moduleRows(data, "schedule").length} rows` }, { tag: "Logistics", title: "Travel Charts", view: "travel", count: `${moduleRows(data, "travel").length} records` },
     { tag: "Generated", title: "Call Sheet", view: "callsheet", count: "Synced live" }, { tag: "Scouting", title: "Locations", view: "locations", count: `${data.locations.length} options` }, { tag: "Client", title: "Client Portal", view: "client", count: `${moduleRows(data, "client_share").length} shared` },
   ];
@@ -271,8 +298,18 @@ function ReconcileView({ expenses, lines, openComposer, mutate }: { expenses: Ex
   </Page>;
 }
 
-function BackupView({ files, filePicker, uploadBackup, removeFile, saving }: { files: FileAsset[]; filePicker: RefObject<HTMLInputElement | null>; uploadBackup: (event: ChangeEvent<HTMLInputElement>) => void; removeFile: (file: FileAsset) => void; saving: boolean }) {
-  return <Page kicker="Finance · Backup" title="Receipts & Invoices" copy="Upload backup once and keep it beside the cost report." actions={<button className="black-button" onClick={() => filePicker.current?.click()}>{saving ? "UPLOADING…" : "＋ UPLOAD"}</button>}><input ref={filePicker} type="file" accept="image/*,application/pdf,.csv" hidden onChange={uploadBackup} /><button className="upload-zone compact" onClick={() => filePicker.current?.click()}><strong>DROP RECEIPTS & INVOICES HERE</strong><span>Images, PDFs and statements · up to 20 MB</span></button><div className="work-table file-work"><div className="work-head"><span>File</span><span>Type</span><span>Size</span><span>Status</span><span></span></div>{files.length ? files.map((file) => <div className="work-row" key={file.id}><span><strong>{file.filename}</strong><small>{relativeTime(file.created_at)}</small></span><span>{file.content_type.split("/").pop()?.toUpperCase()}</span><span>{(file.size / 1024).toFixed(0)} KB</span><span><b className="to-code">{file.status}</b></span><span><a href={`/api/files?key=${encodeURIComponent(file.object_key)}`} target="_blank">VIEW ↗</a><button onClick={() => removeFile(file)}>×</button></span></div>) : <Empty text="NO BACKUP YET" note="Upload the first receipt or invoice above." />}</div></Page>;
+function BackupView({ files, expenses, lines, audits, filePicker, uploadBackup, chooseBackup, removeFile, mutate, auditBudget, saving, auditing }: { files: FileAsset[]; expenses: Expense[]; lines: BudgetLine[]; audits: BudgetAudit[]; filePicker: RefObject<HTMLInputElement | null>; uploadBackup: (event: ChangeEvent<HTMLInputElement>) => void; chooseBackup: (file?: File) => void; removeFile: (file: FileAsset) => void; mutate: Mutate; auditBudget: () => void; saving: boolean; auditing: boolean }) {
+  const backupFiles = files.filter((file) => file.category.toLowerCase() === "backup"); const codedLines = codedBudgetLines(lines); const lineLookup = new Map(codedLines.map((entry) => [entry.line.id, entry])); const backedExpenseIds = new Set(backupFiles.map((file) => file.expense_id).filter(Boolean)); const missing = expenses.filter((expense) => !backedExpenseIds.has(expense.id)); const verified = backupFiles.filter((file) => file.status === "verified").length; const total = backupFiles.reduce((sum, file) => sum + Number(file.amount || 0), 0); const lastAudit = audits[0]; let auditNotes: AuditNote[] = []; try { auditNotes = Array.isArray(lastAudit?.notes) ? lastAudit.notes : JSON.parse(lastAudit?.notes || "[]"); } catch { auditNotes = []; }
+  return <Page kicker="Finance · Backup register" title="Receipts & Invoices" copy="Every upload is coded to a budget line and checked against reconciliation." actions={<><button className="outline-button" disabled={auditing} onClick={auditBudget}>{auditing ? "AUDITING…" : "AUDIT BUDGET ↗"}</button><button className="black-button" onClick={() => filePicker.current?.click()}>{saving ? "UPLOADING…" : "＋ UPLOAD"}</button></>}>
+    <input ref={filePicker} type="file" accept="image/*,application/pdf,.csv" hidden onChange={uploadBackup} />
+    <div className="backup-metrics"><Metric label="Backup received" value={money.format(total)} note={`${backupFiles.length} document${backupFiles.length === 1 ? "" : "s"}`} /><Metric label="Verified" value={`${verified} / ${backupFiles.length}`} note="Reviewed documents" /><Metric label="Missing backup" value={String(missing.length)} note="Costs without a document" /><Metric label="Last audit" value={lastAudit ? formatDate(lastAudit.created_at.slice(0, 10)) : "—"} note={lastAudit ? `${auditNotes.length} audit notes` : "Not run yet"} /></div>
+    <button className="upload-zone compact" onClick={() => filePicker.current?.click()} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); chooseBackup(event.dataTransfer.files?.[0]); }}><strong>DROP RECEIPTS & INVOICES HERE</strong><span>You’ll choose the exact budget line, vendor, amount and date before upload.</span></button>
+    <div className="backup-register-heading"><Heading kicker="Complete backend register" title="All backup" /><span>{backupFiles.length} DOCUMENTS · {verified} VERIFIED</span></div>
+    <div className="work-table backup-file-work"><div className="work-head"><span>Vendor / file</span><span>Budget line</span><span>Date</span><span>Amount</span><span>Status</span><span>Document</span></div>{backupFiles.length ? backupFiles.map((file) => { const allocation = lineLookup.get(file.budget_line_id || ""); return <div className="work-row" key={file.id}><span><strong>{file.vendor || file.filename}</strong><small>{file.filename} · {(file.size / 1024).toFixed(0)} KB</small></span><span><strong>{allocation?.code || "UNASSIGNED"}</strong><small>{allocation?.line.item_name || "Budget line missing"}</small></span><span>{file.spend_date ? formatDate(file.spend_date) : "—"}</span><span><strong>{money.format(Number(file.amount || 0))}</strong></span><span><button className={`status-chip ${file.status}`} onClick={() => mutate({ action: "update_backup_status", id: file.id, status: file.status === "verified" ? "needs_review" : "verified" }, `${file.filename} ${file.status === "verified" ? "returned to review" : "verified"}`)}>{file.status === "verified" ? "VERIFIED" : "VERIFY"}</button></span><span><a href={`/api/files?key=${encodeURIComponent(file.object_key)}`} target="_blank">VIEW ↗</a><button aria-label={`Remove ${file.filename}`} onClick={() => removeFile(file)}>×</button></span></div>; }) : <Empty text="NO BACKUP YET" note="Upload the first receipt or invoice above." />}</div>
+    <div className="backup-register-heading"><Heading kicker="Coverage check" title="Missing backup" /><span>{missing.length} COST{missing.length === 1 ? "" : "S"} WITHOUT DOCUMENTS</span></div>
+    <div className="work-table backup-missing-work"><div className="work-head"><span>Vendor / memo</span><span>Budget line</span><span>Date</span><span>Amount</span><span>Coverage</span></div>{missing.length ? missing.map((expense) => { const allocation = lineLookup.get(expense.budget_line_id); return <div className="work-row" key={expense.id}><span><strong>{expense.vendor}</strong><small>{expense.memo}</small></span><span><strong>{allocation?.code || "UNASSIGNED"}</strong><small>{allocation?.line.item_name || "Budget line missing"}</small></span><span>{formatDate(expense.spend_date)}</span><span><strong>{money.format(expense.amount)}</strong></span><span><b className="backup-missing-chip">MISSING BACKUP</b></span></div>; }) : <div className="backup-coverage-clear"><strong>✓ COMPLETE</strong><span>Every current cost has linked backup.</span></div>}</div>
+    <section className="budget-audit-panel"><header><div><span>AI + RULES AUDIT</span><h2>BUDGET AUDIT NOTES</h2></div><button disabled={auditing} onClick={auditBudget}>{auditing ? "AUDITING…" : "RUN NEW AUDIT ↗"}</button></header>{lastAudit ? <><div className="audit-summary"><span>{lastAudit.source === "openai" ? "OPENAI + DOCUMENT REVIEW" : "AUTOMATED CROSS-CHECK"}</span><strong>{lastAudit.summary}</strong><time>{new Date(lastAudit.created_at).toLocaleString()}</time></div><div className="audit-notes">{auditNotes.map((note, index) => <article className={note.severity} key={`${note.title}-${index}`}><b>{note.severity}</b><div><strong>{note.title}</strong><p>{note.detail}</p></div><span>{note.line_code || "—"}{typeof note.amount === "number" ? ` · ${money.format(note.amount)}` : ""}</span></article>)}</div></> : <div className="audit-empty"><strong>NO AUDIT RUN YET</strong><span>Run an audit to cross-check budget lines, costs, duplicate entries, receipt coverage and document metadata.</span></div>}</section>
+  </Page>;
 }
 
 function CCView({ expenses, lines, ccPicker, importStatement, openComposer, mutate }: { expenses: Expense[]; lines: BudgetLine[]; ccPicker: RefObject<HTMLInputElement | null>; importStatement: (event: ChangeEvent<HTMLInputElement>) => void; openComposer: (composer: Composer) => void; mutate: Mutate }) {
@@ -338,6 +375,12 @@ function Metric({ label, value, note }: { label: string; value: string; note: st
 function Empty({ text, note }: { text: string; note: string }) { return <div className="empty"><strong>{text}</strong><span>{note}</span></div>; }
 function Page({ kicker, title, copy, actions, children }: { kicker: string; title: string; copy: string; actions?: ReactNode; children: ReactNode }) { return <section className="page"><header className="page-head"><div><p>{kicker}</p><h1>{title}</h1><span>{copy}</span></div>{actions && <div>{actions}</div>}</header>{children}</section>; }
 
+function BackupAllocationModal({ file, lines, saving, close, upload }: { file: File; lines: BudgetLine[]; saving: boolean; close: () => void; upload: (values: Record<string, string>) => void }) {
+  const codedLines = codedBudgetLines(lines); const suggestedVendor = file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ");
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const values = Object.fromEntries([...new FormData(event.currentTarget).entries()].map(([key, value]) => [key, String(value)])); upload(values); }
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><form className="composer backup-allocation-modal" onSubmit={submit}><header><div><p>BACKUP ALLOCATION</p><h2>Code This Document</h2></div><button type="button" onClick={close}>×</button></header><div className="backup-file-summary"><span>{file.type.split("/").pop()?.toUpperCase() || "FILE"}</span><div><strong>{file.name}</strong><small>{(file.size / 1024).toFixed(0)} KB</small></div></div><label>Budget line<select name="budgetLineId" required>{codedLines.map(({ line, code }) => <option value={line.id} key={line.id}>{code} · {line.item_name || line.category} — {line.description}</option>)}</select></label><Field label="Vendor" name="vendor" placeholder={suggestedVendor} /><div className="field-pair"><Field label="Amount" name="amount" type="number" placeholder="0.00" /><Field label="Receipt date" name="spendDate" type="date" /></div><Field label="Memo / purpose" name="memo" placeholder={`Backup: ${file.name}`} /><p className="backup-allocation-note">Saving creates the reconciliation cost and links this document to the selected budget line.</p><footer><button type="button" onClick={close}>CANCEL</button><button className="black-button" disabled={saving || !codedLines.length}>{saving ? "UPLOADING…" : "UPLOAD + ALLOCATE"}</button></footer></form></div>;
+}
+
 function ComposerModal({ type, lines, saving, close, submit }: { type: Exclude<Composer, null>; lines: BudgetLine[]; saving: boolean; close: () => void; submit: Mutate }) {
   const codedLines = codedBudgetLines(lines);
   function onSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); if (["production", "crew", "schedule", "travel"].includes(type)) { submit({ action: "add_module_record", module: type, data: values }, `${titleCase(type)} record added`); return; } const action = type === "project" ? "create_project" : type === "budget" ? "add_budget_line" : type === "expense" ? "add_expense" : "add_location"; submit({ ...values, action }, `${titleCase(type)} added`); }
@@ -354,7 +397,7 @@ function ComposerModal({ type, lines, saving, close, submit }: { type: Exclude<C
     <footer><button type="button" onClick={close}>CANCEL</button><button className="black-button" disabled={saving}>{saving ? "SAVING…" : "SAVE"}</button></footer></form></div>;
 }
 
-function Field({ label, name, type = "text", placeholder, required = true }: { label: string; name: string; type?: string; placeholder?: string; required?: boolean }) { return <label>{label}<input name={name} type={type} placeholder={placeholder} required={required && type !== "url"} /></label>; }
+function Field({ label, name, type = "text", placeholder, required = true }: { label: string; name: string; type?: string; placeholder?: string; required?: boolean }) { return <label>{label}<input name={name} type={type} step={type === "number" ? "any" : undefined} placeholder={placeholder} required={required && type !== "url"} /></label>; }
 function parseCsvLine(line: string) { const result: string[] = []; let current = "", quoted = false; for (let index = 0; index < line.length; index++) { const char = line[index]; if (char === '"') { if (quoted && line[index + 1] === '"') { current += '"'; index++; } else quoted = !quoted; } else if (char === "," && !quoted) { result.push(current.trim()); current = ""; } else current += char; } result.push(current.trim()); return result; }
 function normalizeDate(value: string) { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10); }
 function signedMoney(value: number) { return `${value > 0 ? "+" : value < 0 ? "−" : ""}${money.format(Math.abs(value))}`; }
