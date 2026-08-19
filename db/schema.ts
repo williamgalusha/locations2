@@ -1,4 +1,4 @@
-import { real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
@@ -126,3 +126,22 @@ export const budgetAudits = sqliteTable("budget_audits", {
   notes: text("notes").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+export const portalUsers = sqliteTable("portal_users", {
+  id: text("id").primaryKey(),
+  username: text("username").notNull(),
+  displayName: text("display_name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  passwordSalt: text("password_salt").notNull(),
+  accessLevel: text("access_level").notNull(),
+  active: real("active").notNull().default(1),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [uniqueIndex("portal_user_username_idx").on(table.username)]);
+
+export const portalUserProjects = sqliteTable("portal_user_projects", {
+  userId: text("user_id").notNull(),
+  projectId: text("project_id").notNull(),
+  permission: text("permission").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [primaryKey({ columns: [table.userId, table.projectId] })]);

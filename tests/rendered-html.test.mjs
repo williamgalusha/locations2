@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the BILL, INC. production control room instead of starter preview UI", async () => {
-  const [page, layout, portal, referenceUi, css, packageJson, credentialRoute, credentialAuth] = await Promise.all([
+  const [page, layout, portal, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("app/production-portal.tsx", root), "utf8"),
@@ -14,6 +14,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
     readFile(new URL("package.json", root), "utf8"),
     readFile(new URL("app/api/credential-login/route.ts", root), "utf8"),
     readFile(new URL("app/credential-auth.ts", root), "utf8"),
+    readFile(new URL("app/api/access/route.ts", root), "utf8"),
   ]);
 
   assert.match(page, /verifyPortalSession/);
@@ -96,6 +97,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /DARK MODE/);
   assert.match(portal, /DARK MODE/);
   assert.match(portal, /USER CONTROLS/);
+  assert.match(portal, /ADMIN ACCESS/);
+  assert.match(portal, /ADD USER/);
+  assert.match(portal, /Selected projects only/);
   assert.match(portal, /WORKSPACE PREFERENCES/);
   assert.match(portal, /aria-haspopup="dialog"/);
   assert.match(portal, /bill-compact-rows/);
@@ -117,9 +121,19 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /pickup-result/);
   assert.match(credentialRoute, /PORTAL_SESSION_COOKIE/);
   assert.match(credentialRoute, /role === "client"/);
-  assert.match(credentialAuth, /PORTAL_PASSWORD/);
-  assert.match(credentialAuth, /CLIENT_PORTAL_PASSWORD/);
-  assert.doesNotMatch(credentialAuth + credentialRoute, /williamblake/);
+  assert.match(credentialAuth, /PORTAL_BOOTSTRAP_USERNAME/);
+  assert.match(credentialAuth, /PORTAL_BOOTSTRAP_PASSWORD/);
+  assert.match(credentialAuth, /PBKDF2/);
+  assert.match(credentialAuth, /portal_users/);
+  assert.match(credentialAuth, /portal_user_projects/);
+  assert.match(credentialAuth, /authorizePortalRequest/);
+  assert.match(accessRoute, /save_user/);
+  assert.match(accessRoute, /set_user_active/);
+  assert.match(accessRoute, /Administrator access is required/);
+  assert.match(referenceUi, /CLIENT LOGIN/);
+  assert.match(referenceUi, /set_client_credential/);
+  assert.match(referenceUi, /disable_client_credential/);
+  assert.match(css, /client-credential-manager/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.match(css, /data-print-surface="budget"/);
@@ -129,13 +143,14 @@ test("ships the BILL, INC. production control room instead of starter preview UI
 });
 
 test("includes durable records, file storage, budget history, and synchronized production actions", async () => {
-  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, auditMigration, route, fileRoute, auditRoute, travelTimeRoute, schema] = await Promise.all([
+  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, auditMigration, authMigration, route, fileRoute, auditRoute, travelTimeRoute, schema] = await Promise.all([
     readFile(new URL(".openai/hosting.json", root), "utf8"),
     readFile(new URL("drizzle/0000_cute_genesis.sql", root), "utf8"),
     readFile(new URL("drizzle/0001_typical_sabra.sql", root), "utf8"),
     readFile(new URL("drizzle/0002_blue_proudstar.sql", root), "utf8"),
     readFile(new URL("drizzle/0003_overconfident_northstar.sql", root), "utf8"),
     readFile(new URL("drizzle/0004_concerned_siren.sql", root), "utf8"),
+    readFile(new URL("drizzle/0005_nappy_cannonball.sql", root), "utf8"),
     readFile(new URL("app/api/portal/route.ts", root), "utf8"),
     readFile(new URL("app/api/files/route.ts", root), "utf8"),
     readFile(new URL("app/api/audit/route.ts", root), "utf8"),
@@ -154,7 +169,9 @@ test("includes durable records, file storage, budget history, and synchronized p
   for (const column of ["section_code", "item_code", "contact_email", "gallery", "deleted_at", "client_visible"]) assert.match(restoredMigration, new RegExp(column));
   assert.match(auditMigration, /CREATE TABLE `budget_audits`/);
   for (const column of ["budget_line_id", "expense_id", "vendor", "amount", "spend_date", "memo"]) assert.match(auditMigration, new RegExp(column));
-  for (const action of ["create_project", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
+  assert.match(authMigration, /CREATE TABLE `portal_users`/);
+  assert.match(authMigration, /CREATE TABLE `portal_user_projects`/);
+  for (const action of ["create_project", "set_client_credential", "disable_client_credential", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
     assert.match(route, new RegExp(action));
   }
   assert.match(fileRoute, /bucket\(\)\.put/);

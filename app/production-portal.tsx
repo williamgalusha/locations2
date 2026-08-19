@@ -3,7 +3,7 @@
 import type { ChangeEvent, DragEvent, FormEvent, ReactNode, RefObject } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ReferenceBudgetView, ReferenceClientPortal, ReferenceLocationsView, ReferenceLoginScreen } from "./reference-ui";
-import type { PortalRole } from "./credential-auth";
+import type { PortalAccessLevel, PortalRole } from "./credential-auth";
 
 export type Project = { id: string; name: string; client: string; code: string; status: string; shoot_start: string; shoot_end: string; currency: string; contact?: string; contact_email?: string; billing_address?: string; po_no?: string; budget_notes?: string; budget_changes?: string; markup_pct?: number; insurance_pct?: number };
 export type BudgetLine = { id: string; category: string; description: string; estimate: number; actual: number; section_code?: string; item_code?: string; item_name?: string; rate?: number; quantity?: number; days?: number; tax_pct?: number; is_na?: number; na_note?: string };
@@ -18,10 +18,11 @@ type FileAsset = { id: string; object_key: string; filename: string; content_typ
 type AuditNote = { severity: "critical" | "review" | "info"; title: string; detail: string; line_code?: string; amount?: number };
 type BudgetAudit = { id: string; source: string; status: string; summary: string; notes: string | AuditNote[]; created_at: string };
 type PickupPlan = { origin: string; destination: string; tripType: "to_airport" | "from_airport" | "general"; eventDateTime: string; pickupAt: string; arriveBy: string; estimatedDestinationAt: string; airportLeadMinutes: number; bufferMinutes: number; providerConfigured: boolean; driveMinutes: number; staticMinutes: number | null; trafficDelayMinutes: number | null; distanceMiles: number | null; source: "google_traffic" | "estimated" };
-export type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[]; audits: BudgetAudit[] };
+export type ClientCredential = { username: string; active: number | boolean; updated_at: string } | null;
+export type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[]; audits: BudgetAudit[]; clientCredential: ClientCredential };
 type View = "control" | "budget" | "reconcile" | "backup" | "cc" | "production" | "crew" | "schedule" | "travel" | "callsheet" | "locations" | "client" | "activity";
 type Composer = "budget" | "expense" | "location" | "project" | "production" | "crew" | "schedule" | "travel" | null;
-export type User = { name: string; email: string; credential?: boolean; role?: PortalRole } | null;
+export type User = { name: string; email: string; credential?: boolean; role?: PortalRole; accessLevel?: PortalAccessLevel; projectIds?: string[] } | null;
 export type Mutate = (payload: Record<string, unknown>, success: string) => Promise<void>;
 
 const groups: { label: string; items: { id: View; label: string }[] }[] = [
@@ -228,7 +229,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
     <section className="workspace">
       <header className="topbar">
-        <div className="project-switch-wrap"><button className="project-switcher" onClick={() => setProjectMenu((value) => !value)}><span className="project-stamp">{data.project.code.slice(0, 2)}</span><span><small>CURRENT PRODUCTION</small><strong>{data.project.name}</strong></span><b>⌄</b></button>{projectMenu && <div className="project-menu"><p>PRODUCTIONS</p>{data.projects.map((project) => <button className={project.id === data.project.id ? "current" : ""} onClick={() => loadProject(project.id)} key={project.id}><span><strong>{project.name}</strong><small>{project.client} · {project.code}</small></span><b>{project.id === data.project.id ? "✓" : "→"}</b></button>)}<button className="new-project" onClick={() => { setProjectMenu(false); setComposer("project"); }}>＋ NEW PRODUCTION</button></div>}</div>
+        <div className="project-switch-wrap"><button className="project-switcher" onClick={() => setProjectMenu((value) => !value)}><span className="project-stamp">{data.project.code.slice(0, 2)}</span><span><small>CURRENT PRODUCTION</small><strong>{data.project.name}</strong></span><b>⌄</b></button>{projectMenu && <div className="project-menu"><p>PRODUCTIONS</p>{data.projects.map((project) => <button className={project.id === data.project.id ? "current" : ""} onClick={() => loadProject(project.id)} key={project.id}><span><strong>{project.name}</strong><small>{project.client} · {project.code}</small></span><b>{project.id === data.project.id ? "✓" : "→"}</b></button>)}{(user.accessLevel === "admin" || user.accessLevel === "full") && <button className="new-project" onClick={() => { setProjectMenu(false); setComposer("project"); }}>＋ NEW PRODUCTION</button>}</div>}</div>
         <label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this production" aria-label="Search this production" /><kbd>⌘ K</kbd></label>
         <div className="top-actions"><span className="sync-state">● SAVED</span><button className="theme-button" onClick={toggleTheme} aria-label={`Use ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "◐" : "◑"}</button><button className="present-button" onClick={() => { openView("client"); setClientPreview(true); }}>CLIENT VIEW ↗</button></div>
       </header>
@@ -254,23 +255,69 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
     {composer && <ComposerModal type={composer} lines={data.budgetLines} saving={saving} close={() => setComposer(null)} submit={mutate} />}
     {pendingBackup && <BackupAllocationModal file={pendingBackup} lines={data.budgetLines} saving={saving} close={() => setPendingBackup(null)} upload={saveBackupAllocation} />}
-    {userControls && <UserControlsDrawer user={user} project={data.project} theme={theme} compactRows={compactRows} reduceMotion={reduceMotion} close={() => setUserControls(false)} setTheme={setThemeMode} setCompactRows={setCompactMode} setReduceMotion={setMotionMode} logOut={logOut} externalLogout={!localPreview && !user.credential} />}
+    {userControls && <UserControlsDrawer user={user} project={data.project} projects={data.projects} theme={theme} compactRows={compactRows} reduceMotion={reduceMotion} close={() => setUserControls(false)} setTheme={setThemeMode} setCompactRows={setCompactMode} setReduceMotion={setMotionMode} logOut={logOut} externalLogout={!localPreview && !user.credential} />}
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
   </main>;
 }
 
-function UserControlsDrawer({ user, project, theme, compactRows, reduceMotion, close, setTheme, setCompactRows, setReduceMotion, logOut, externalLogout }: { user: NonNullable<User>; project: Project; theme: "light" | "dark"; compactRows: boolean; reduceMotion: boolean; close: () => void; setTheme: (theme: "light" | "dark") => void; setCompactRows: (value: boolean) => void; setReduceMotion: (value: boolean) => void; logOut: () => Promise<void>; externalLogout: boolean }) {
+type AccessUser = { id: string; username: string; displayName: string; accessLevel: Exclude<PortalAccessLevel, "client">; active: boolean; projectIds: string[]; updatedAt: string };
+type AccessData = { users: AccessUser[]; projects: Pick<Project, "id" | "name" | "client" | "code">[] };
+type AccessDraft = { id: string; username: string; displayName: string; password: string; accessLevel: Exclude<PortalAccessLevel, "client">; projectIds: string[] };
+const emptyAccessDraft: AccessDraft = { id: "", username: "", displayName: "", password: "", accessLevel: "project", projectIds: [] };
+
+function UserControlsDrawer({ user, project, projects, theme, compactRows, reduceMotion, close, setTheme, setCompactRows, setReduceMotion, logOut, externalLogout }: { user: NonNullable<User>; project: Project; projects: Project[]; theme: "light" | "dark"; compactRows: boolean; reduceMotion: boolean; close: () => void; setTheme: (theme: "light" | "dark") => void; setCompactRows: (value: boolean) => void; setReduceMotion: (value: boolean) => void; logOut: () => Promise<void>; externalLogout: boolean }) {
+  const [access, setAccess] = useState<AccessData | null>(null);
+  const [accessDraft, setAccessDraft] = useState<AccessDraft | null>(null);
+  const [accessError, setAccessError] = useState("");
+  const [accessSaving, setAccessSaving] = useState(false);
+  const isAdmin = user.accessLevel === "admin";
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
   }, [close]);
+  useEffect(() => { if (isAdmin) void loadAccess(); }, [isAdmin]);
+
+  async function loadAccess() {
+    setAccessError("");
+    const response = await fetch("/api/access");
+    const payload = await response.json() as AccessData & { error?: string };
+    if (!response.ok) { setAccessError(payload.error || "Access controls could not be loaded."); return; }
+    setAccess(payload);
+  }
+
+  async function saveAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!accessDraft) return;
+    setAccessSaving(true); setAccessError("");
+    try {
+      const response = await fetch("/api/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save_user", ...accessDraft }) });
+      const payload = await response.json() as AccessData & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "That login could not be saved.");
+      setAccess(payload); setAccessDraft(null);
+    } catch (reason) { setAccessError(reason instanceof Error ? reason.message : "That login could not be saved."); }
+    finally { setAccessSaving(false); }
+  }
+
+  async function setUserActive(accessUser: AccessUser, active: boolean) {
+    setAccessSaving(true); setAccessError("");
+    try {
+      const response = await fetch("/api/access", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_user_active", id: accessUser.id, active }) });
+      const payload = await response.json() as AccessData & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "That login could not be updated.");
+      setAccess(payload);
+    } catch (reason) { setAccessError(reason instanceof Error ? reason.message : "That login could not be updated."); }
+    finally { setAccessSaving(false); }
+  }
+
+  const roleLabel = user.accessLevel === "admin" ? "Administrator" : user.accessLevel === "full" ? "Full access" : "Project access";
 
   return <div className="user-controls-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <aside className="user-controls-drawer" role="dialog" aria-modal="true" aria-labelledby="user-controls-title">
       <header><div><span>ACCOUNT</span><h2 id="user-controls-title">USER CONTROLS</h2></div><button onClick={close} aria-label="Close user controls">×</button></header>
-      <section className="user-profile-card"><span>{initials(user.name)}</span><div><strong>{user.name}</strong><small>{user.email}</small></div><b>PRODUCTION</b></section>
-      <section className="user-control-section"><p>ACCESS</p><dl><div><dt>ROLE</dt><dd>Production administrator</dd></div><div><dt>CURRENT PRODUCTION</dt><dd>{project.name}</dd></div><div><dt>JOB CODE</dt><dd>{project.code}</dd></div></dl></section>
+      <section className="user-profile-card"><span>{initials(user.name)}</span><div><strong>{user.name}</strong><small>{user.email}</small></div><b>{user.accessLevel === "admin" ? "ADMIN" : "PRODUCTION"}</b></section>
+      <section className="user-control-section"><p>ACCESS</p><dl><div><dt>ROLE</dt><dd>{roleLabel}</dd></div><div><dt>CURRENT PRODUCTION</dt><dd>{project.name}</dd></div><div><dt>JOB CODE</dt><dd>{project.code}</dd></div></dl></section>
+      {isAdmin && <section className="user-control-section user-access-admin"><p>ADMIN ACCESS <button type="button" onClick={() => setAccessDraft({ ...emptyAccessDraft, projectIds: [project.id] })}>＋ ADD USER</button></p>{accessError && <div className="access-error">{accessError}</div>}{access ? <div className="access-user-list">{access.users.map((accessUser) => <div className={!accessUser.active ? "disabled" : ""} key={accessUser.id}><span><strong>{accessUser.displayName}</strong><small>@{accessUser.username} · {accessUser.accessLevel === "admin" ? "Administrator" : accessUser.accessLevel === "full" ? "All projects" : `${accessUser.projectIds.length} project${accessUser.projectIds.length === 1 ? "" : "s"}`}</small></span><button type="button" onClick={() => setAccessDraft({ id: accessUser.id, username: accessUser.username, displayName: accessUser.displayName, password: "", accessLevel: accessUser.accessLevel, projectIds: accessUser.projectIds })}>EDIT</button><button type="button" disabled={accessSaving} onClick={() => void setUserActive(accessUser, !accessUser.active)}>{accessUser.active ? "DISABLE" : "ENABLE"}</button></div>)}</div> : <small className="access-loading">LOADING PORTAL USERS…</small>}{accessDraft && <form className="access-user-form" onSubmit={saveAccess}><header><strong>{accessDraft.id ? "EDIT PRODUCTION USER" : "ADD PRODUCTION USER"}</strong><button type="button" onClick={() => setAccessDraft(null)}>×</button></header><label>DISPLAY NAME<input required value={accessDraft.displayName} onChange={(event) => setAccessDraft({ ...accessDraft, displayName: event.target.value })} /></label><label>USERNAME<input required value={accessDraft.username} autoCapitalize="none" onChange={(event) => setAccessDraft({ ...accessDraft, username: event.target.value })} /></label><label>{accessDraft.id ? "NEW PASSWORD · LEAVE BLANK TO KEEP" : "PASSWORD"}<input required={!accessDraft.id} minLength={8} type="password" autoComplete="new-password" value={accessDraft.password} onChange={(event) => setAccessDraft({ ...accessDraft, password: event.target.value })} /></label><label>ACCESS LEVEL<select value={accessDraft.accessLevel} onChange={(event) => setAccessDraft({ ...accessDraft, accessLevel: event.target.value as AccessDraft["accessLevel"] })}><option value="admin">Administrator · users + all projects</option><option value="full">Full access · all projects</option><option value="project">Selected projects only</option></select></label>{accessDraft.accessLevel === "project" && <fieldset><legend>PROJECT ACCESS</legend>{projects.map((item) => <label key={item.id}><input type="checkbox" checked={accessDraft.projectIds.includes(item.id)} onChange={(event) => setAccessDraft({ ...accessDraft, projectIds: event.target.checked ? [...accessDraft.projectIds, item.id] : accessDraft.projectIds.filter((id) => id !== item.id) })} /><span><strong>{item.name}</strong><small>{item.client} · {item.code}</small></span></label>)}</fieldset>}<footer><button type="button" onClick={() => setAccessDraft(null)}>CANCEL</button><button className="solid" disabled={accessSaving} type="submit">{accessSaving ? "SAVING…" : "SAVE ACCESS"}</button></footer></form>}</section>}
       <section className="user-control-section"><p>APPEARANCE</p><div className="theme-choice" role="group" aria-label="Color mode"><button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} aria-pressed={theme === "light"}><i>○</i><span>LIGHT MODE</span></button><button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} aria-pressed={theme === "dark"}><i>●</i><span>DARK MODE</span></button></div></section>
       <section className="user-control-section"><p>WORKSPACE PREFERENCES <span>SAVED ON THIS DEVICE</span></p><button className={compactRows ? "user-setting active" : "user-setting"} onClick={() => setCompactRows(!compactRows)} aria-pressed={compactRows}><span><strong>Compact data rows</strong><small>Fit more budget, backup and production lines on screen.</small></span><i>{compactRows ? "ON" : "OFF"}</i></button><button className={reduceMotion ? "user-setting active" : "user-setting"} onClick={() => setReduceMotion(!reduceMotion)} aria-pressed={reduceMotion}><span><strong>Reduce interface motion</strong><small>Minimize animation and movement throughout the workspace.</small></span><i>{reduceMotion ? "ON" : "OFF"}</i></button></section>
       <section className="user-control-section user-security"><p>SECURITY</p><div><span>SESSION</span><strong>AUTHENTICATED</strong></div><div><span>SIGN-IN METHOD</span><strong>{user.credential ? "PORTAL CREDENTIAL" : "CHATGPT ACCOUNT"}</strong></div></section>

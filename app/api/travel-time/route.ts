@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { authorizePortalRequest } from "../../credential-auth";
 
 export const runtime = "edge";
 
@@ -96,6 +97,9 @@ async function trafficRoute(origin: string, destination: string, departureTime: 
 
 export async function POST(request: Request) {
   try {
+    const authorization = await authorizePortalRequest(request);
+    if (!authorization) return Response.json({ error: "Please log in to calculate pickup times." }, { status: 401 });
+    if (authorization.role !== "production") return Response.json({ error: "Client logins cannot update production travel." }, { status: 403 });
     const payload: unknown = await request.json();
     const body: RouteBody = payload && typeof payload === "object" ? payload : {};
     const origin = boundedText(body.origin, "Origin");

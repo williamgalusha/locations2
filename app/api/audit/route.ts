@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { authorizePortalRequest, canAccessPortalProject } from "../../credential-auth";
 
 export const runtime = "edge";
 
@@ -125,8 +126,12 @@ async function openAiAudit(project: Record<string, unknown>, lines: BudgetLineRo
 
 export async function POST(request: Request) {
   try {
+    const authorization = await authorizePortalRequest(request);
+    if (!authorization) return Response.json({ error: "Please log in to audit this budget." }, { status: 401 });
+    if (authorization.role !== "production") return Response.json({ error: "Client logins cannot audit production budgets." }, { status: 403 });
     const body = await request.json() as { projectId?: unknown };
     const projectId = safeProjectId(body.projectId);
+    if (!canAccessPortalProject(authorization, projectId)) return Response.json({ error: "This login does not have access to that project." }, { status: 403 });
     const db = database();
     await db.prepare("CREATE TABLE IF NOT EXISTS budget_audits (id TEXT PRIMARY KEY, project_id TEXT NOT NULL, source TEXT NOT NULL, status TEXT NOT NULL, summary TEXT NOT NULL, notes TEXT NOT NULL, created_at TEXT NOT NULL)").run();
     const [project, lineResult, expenseResult, fileResult] = await Promise.all([
@@ -150,7 +155,7 @@ export async function POST(request: Request) {
     const createdAt = new Date().toISOString();
     await db.batch([
       db.prepare("INSERT INTO budget_audits VALUES (?, ?, ?, 'complete', ?, ?, ?)").bind(id, projectId, source, summary, JSON.stringify(notes), createdAt),
-      db.prepare("INSERT INTO activities VALUES (?, ?, 'audit', ?, ?, ?)").bind(crypto.randomUUID(), projectId, `Budget audit completed · ${critical} critical · ${review} review`, source === "openai" ? "OpenAI audit" : "Audit engine", createdAt),
+      db.prepare("INSERT INTO activities VALUES (?, ?, 'audit', ?, ?, ?)").bind(crypto.randomUUID(), projectId, `Budget audit completed · ${critical} critical · ${review} review`, `${authorization.displayName} · ${source === "openai" ? "OpenAI audit" : "Audit engine"}`, createdAt),
     ]);
     return Response.json({ audit: { id, source, status: "complete", summary, notes, created_at: createdAt }, aiConfigured: Boolean(environment().OPENAI_API_KEY), documentsReviewed: source === "openai" ? fileResult.results.length : 0 });
   } catch (error) {

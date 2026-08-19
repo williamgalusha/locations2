@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { authorizePortalRequest, canAccessPortalProject, ensurePortalAuthSchema, hashPortalPassword, normalizePortalUsername, type PortalAuthorization } from "../../credential-auth";
 
 export const runtime = "edge";
 
@@ -209,11 +210,13 @@ async function seedIfNeeded() {
   }
 }
 
-async function portalData(projectId: string) {
+async function portalData(projectId: string, authorization: PortalAuthorization) {
   const db = database();
   const projectsResult = await db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all();
-  const chosen = projectsResult.results.some((project) => project.id === projectId) ? projectId : String(projectsResult.results[0]?.id ?? FALLBACK_PROJECT_ID);
-  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult, auditResult] = await Promise.all([
+  const projects = projectsResult.results.filter((project) => canAccessPortalProject(authorization, String(project.id)));
+  const chosen = projects.some((project) => project.id === projectId) ? projectId : String(projects[0]?.id ?? "");
+  if (!chosen) throw new Error("No projects have been assigned to this login.");
+  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult, auditResult, clientCredential] = await Promise.all([
     db.prepare("SELECT * FROM projects WHERE id = ?").bind(chosen).first(),
     db.prepare("SELECT * FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(chosen).all(),
     db.prepare("SELECT * FROM budget_versions WHERE project_id = ? ORDER BY created_at DESC").bind(chosen).all(),
@@ -223,11 +226,12 @@ async function portalData(projectId: string) {
     db.prepare("SELECT * FROM module_records WHERE project_id = ? ORDER BY created_at").bind(chosen).all(),
     db.prepare("SELECT * FROM file_assets WHERE project_id = ? ORDER BY created_at DESC").bind(chosen).all(),
     db.prepare("SELECT * FROM budget_audits WHERE project_id = ? ORDER BY created_at DESC LIMIT 20").bind(chosen).all(),
+    db.prepare("SELECT u.username, u.active, u.updated_at FROM portal_users u INNER JOIN portal_user_projects up ON up.user_id = u.id WHERE up.project_id = ? AND u.access_level = 'client' LIMIT 1").bind(chosen).first(),
   ]);
   const records = moduleResult.results.map((record) => ({ ...record, data: JSON.parse(String(record.data || "{}")) }));
   const budgetVersions = versionResult.results.map((version) => ({ ...version, snapshot: JSON.parse(String(version.snapshot || "[]")) }));
   return {
-    projects: projectsResult.results,
+    projects,
     project,
     budgetLines: budgetResult.results,
     budgetVersions,
@@ -237,6 +241,7 @@ async function portalData(projectId: string) {
     files: fileResult.results,
     audits: auditResult.results,
     records,
+    clientCredential: clientCredential || null,
   };
 }
 
@@ -248,9 +253,12 @@ async function logActivity(projectId: string, kind: string, message: string, act
 export async function GET(request: Request) {
   try {
     await ensureSchema();
+    await ensurePortalAuthSchema();
     await seedIfNeeded();
+    const authorization = await authorizePortalRequest(request);
+    if (!authorization) return Response.json({ error: "Please log in to open this production." }, { status: 401 });
     const projectId = safeProjectId(new URL(request.url).searchParams.get("project"));
-    return Response.json(await portalData(projectId));
+    return Response.json(await portalData(projectId, authorization));
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to load production data." }, { status: 500 });
   }
@@ -259,15 +267,22 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     await ensureSchema();
+    await ensurePortalAuthSchema();
     await seedIfNeeded();
+    const authorization = await authorizePortalRequest(request);
+    if (!authorization) return Response.json({ error: "Please log in to make that change." }, { status: 401 });
     const body = (await request.json()) as ActionBody;
     const action = textValue(body.action);
     let projectId = safeProjectId(body.projectId);
-    const actor = actorFromRequest(request);
+    const actor = authorization.displayName || actorFromRequest(request);
     const db = database();
     const now = new Date().toISOString();
 
+    if (action !== "create_project" && !canAccessPortalProject(authorization, projectId)) return Response.json({ error: "This login does not have access to that project." }, { status: 403 });
+    if (authorization.role === "client" && action !== "update_location_status") return Response.json({ error: "Client logins can only update client-facing project selections." }, { status: 403 });
+
     if (action === "create_project") {
+      if (authorization.accessLevel !== "admin" && authorization.accessLevel !== "full") return Response.json({ error: "Only administrators and full-access users can create projects." }, { status: 403 });
       projectId = `prj_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
       const name = textValue(body.name, "Untitled production");
       const client = textValue(body.client, "New client");
@@ -280,6 +295,35 @@ export async function POST(request: Request) {
         db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "V1 · Initial estimate", "draft", "[]", now),
       ]);
       await logActivity(projectId, "project", `${name} created`, actor);
+    } else if (action === "set_client_credential") {
+      if (authorization.role !== "production") return Response.json({ error: "Only production users can manage client credentials." }, { status: 403 });
+      const username = normalizePortalUsername(textValue(body.username));
+      const password = typeof body.password === "string" ? body.password : "";
+      if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(username)) throw new Error("Use at least 3 letters or numbers for the client username.");
+      const existing = await db.prepare("SELECT u.id, u.username FROM portal_users u INNER JOIN portal_user_projects up ON up.user_id = u.id WHERE up.project_id = ? AND u.access_level = 'client' LIMIT 1").bind(projectId).first<{ id: string; username: string }>();
+      const conflict = await db.prepare("SELECT id FROM portal_users WHERE username = ? LIMIT 1").bind(username).first<{ id: string }>();
+      if (conflict && conflict.id !== existing?.id) throw new Error("That username is already in use.");
+      if (existing) {
+        const updates = [db.prepare("UPDATE portal_users SET username = ?, display_name = ?, active = 1, updated_at = ? WHERE id = ?").bind(username, `${textValue(body.displayName, dataClientName(username))}`, now, existing.id)];
+        if (password) {
+          const credentials = await hashPortalPassword(password);
+          updates.push(db.prepare("UPDATE portal_users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?").bind(credentials.hash, credentials.salt, now, existing.id));
+        }
+        await db.batch(updates);
+      } else {
+        if (!password) throw new Error("Enter a password when creating the client login.");
+        const credentials = await hashPortalPassword(password);
+        const userId = crypto.randomUUID();
+        await db.batch([
+          db.prepare("INSERT INTO portal_users (id, username, display_name, password_hash, password_salt, access_level, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'client', 1, ?, ?)").bind(userId, username, textValue(body.displayName, dataClientName(username)), credentials.hash, credentials.salt, now, now),
+          db.prepare("INSERT INTO portal_user_projects (user_id, project_id, permission, created_at) VALUES (?, ?, 'client', ?)").bind(userId, projectId, now),
+        ]);
+      }
+      await logActivity(projectId, "client", "Client portal login updated", actor);
+    } else if (action === "disable_client_credential") {
+      if (authorization.role !== "production") return Response.json({ error: "Only production users can manage client credentials." }, { status: 403 });
+      await db.prepare("UPDATE portal_users SET active = 0, updated_at = ? WHERE id IN (SELECT user_id FROM portal_user_projects WHERE project_id = ? AND permission = 'client')").bind(now, projectId).run();
+      await logActivity(projectId, "client", "Client portal login disabled", actor);
     } else if (action === "add_budget_line") {
       const category = textValue(body.category, "New category");
       const description = textValue(body.description, "Production cost");
@@ -528,10 +572,14 @@ export async function POST(request: Request) {
       return Response.json({ error: "Unknown portal action." }, { status: 400 });
     }
 
-    return Response.json(await portalData(projectId));
+    return Response.json(await portalData(projectId, authorization));
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Unable to save that change." }, { status: 500 });
   }
+}
+
+function dataClientName(username: string) {
+  return username.replace(/[._-]+/g, " ").replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
 }
 
 function statusLabel(value: string) {

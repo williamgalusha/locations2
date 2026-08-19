@@ -1,4 +1,5 @@
 import { env } from "cloudflare:workers";
+import { authorizePortalRequest, canAccessPortalProject } from "../../credential-auth";
 
 export const runtime = "edge";
 
@@ -15,6 +16,10 @@ function bucket() {
 export async function GET(request: Request) {
   const key = new URL(request.url).searchParams.get("key");
   if (!key) return Response.json({ error: "Missing file key." }, { status: 400 });
+  const authorization = await authorizePortalRequest(request);
+  const projectId = key.split("/")[0] || "";
+  if (!authorization) return Response.json({ error: "Please log in to open this file." }, { status: 401 });
+  if (!canAccessPortalProject(authorization, projectId)) return Response.json({ error: "This login does not have access to that file." }, { status: 403 });
   const object = await bucket().get(key);
   if (!object) return Response.json({ error: "File not found." }, { status: 404 });
   const headers = new Headers();
@@ -27,6 +32,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   let uploadedKey = "";
   try {
+    const authorization = await authorizePortalRequest(request);
+    if (!authorization) return Response.json({ error: "Please log in to upload files." }, { status: 401 });
+    if (authorization.role !== "production") return Response.json({ error: "Client logins cannot upload production files." }, { status: 403 });
     const form = await request.formData();
     const file = form.get("file");
     const projectId = String(form.get("projectId") ?? "").trim();
@@ -38,6 +46,7 @@ export async function POST(request: Request) {
     const memo = String(form.get("memo") ?? "").trim();
     const isBackup = category.toLowerCase() === "backup";
     if (!(file instanceof File) || !projectId) return Response.json({ error: "Choose a file and project." }, { status: 400 });
+    if (!canAccessPortalProject(authorization, projectId)) return Response.json({ error: "This login does not have access to that project." }, { status: 403 });
     if (file.size > 20 * 1024 * 1024) return Response.json({ error: "Files must be smaller than 20 MB." }, { status: 413 });
     if (isBackup && (!budgetLineId || !vendor || !Number.isFinite(amount) || amount <= 0 || !spendDate)) return Response.json({ error: "Choose a budget line and enter the receipt vendor, amount, and date." }, { status: 400 });
     const budgetLine = isBackup ? await database().prepare("SELECT item_code FROM budget_lines WHERE id = ? AND project_id = ?").bind(budgetLineId, projectId).first<{ item_code: string }>() : null;
@@ -51,7 +60,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
     const statements = [
       database().prepare("INSERT INTO file_assets (id, project_id, object_key, filename, content_type, size, category, status, budget_line_id, expense_id, vendor, amount, spend_date, memo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(id, projectId, objectKey, file.name, file.type || "application/octet-stream", file.size, category, isBackup ? "needs_review" : "uploaded", isBackup ? budgetLineId : "", isBackup ? expenseId : "", isBackup ? vendor : "", isBackup ? amount : 0, isBackup ? spendDate : "", isBackup ? memo : "", now),
-      database().prepare("INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "file", isBackup ? `${file.name} uploaded and allocated to ${budgetLine?.item_code || "budget"}` : `${file.name} uploaded to ${category}`, "Jamie Rivera", now),
+      database().prepare("INSERT INTO activities VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "file", isBackup ? `${file.name} uploaded and allocated to ${budgetLine?.item_code || "budget"}` : `${file.name} uploaded to ${category}`, authorization.displayName, now),
     ];
     if (isBackup) statements.splice(1, 0,
       database().prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, 'needs_review', ?, ?)").bind(expenseId, projectId, budgetLineId, vendor, amount, spendDate, memo || `Backup: ${file.name}`, now),
@@ -67,8 +76,12 @@ export async function POST(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const authorization = await authorizePortalRequest(request);
+    if (!authorization) return Response.json({ error: "Please log in to remove files." }, { status: 401 });
+    if (authorization.role !== "production") return Response.json({ error: "Client logins cannot remove production files." }, { status: 403 });
     const body = await request.json() as { id?: string; key?: string; projectId?: string };
     if (!body.id || !body.key || !body.projectId) return Response.json({ error: "Missing file details." }, { status: 400 });
+    if (!canAccessPortalProject(authorization, body.projectId)) return Response.json({ error: "This login does not have access to that project." }, { status: 403 });
     await bucket().delete(body.key);
     await database().prepare("DELETE FROM file_assets WHERE id = ? AND project_id = ?").bind(body.id, body.projectId).run();
     return Response.json({ ok: true });

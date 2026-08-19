@@ -10,7 +10,7 @@ export default async function Home() {
   const cookieStore = await cookies();
   const credential = await verifyPortalSession(cookieStore.get(PORTAL_SESSION_COOKIE)?.value).catch(() => null);
   const initialUser = credential
-    ? { name: credential.username, email: credential.role === "client" ? "Client portal" : "Production portal", credential: true, role: credential.role }
-    : user ? { name: user.displayName, email: user.email, role: "production" as const } : null;
+    ? { name: credential.displayName, email: credential.username, credential: true, role: credential.role, accessLevel: credential.accessLevel }
+    : user ? { name: user.displayName, email: user.email, role: "production" as const, accessLevel: "admin" as const } : null;
   return <ProductionPortal initialUser={initialUser} />;
 }
