@@ -205,7 +205,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .work-row strong { font-size: 7px; }
 .work-row small { margin-top: 2px; color: var(--quiet); font-size: 6px; }
 .work-row button { cursor: pointer; }
-.budget-editor .work-head, .budget-editor .work-row, .budget-editor .work-total, .reconcile-summary .work-head, .reconcile-summary .work-row { grid-template-columns: 1.5fr .65fr .62fr .65fr .65fr .75fr; }
+.budget-editor .work-head, .budget-editor .work-row, .budget-editor .work-total, .reconcile-summary .work-head, .reconcile-summary .work-row, .reconcile-summary .work-total { grid-template-columns: 1.62fr .68fr .68fr .68fr .68fr .68fr; }
 .budget-editor .changed-row { background: var(--wash); box-shadow: inset 2px 0 0 var(--ink); }
 .budget-editor .work-row > span:first-child { display: grid; gap: 2px; }
 .budget-editor input { width: 100%; padding: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font-size: 7px; }
@@ -213,7 +213,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .budget-editor .work-row > span:first-child input:last-child { color: var(--quiet); font-size: 6px; }
 .money-input { display: grid; grid-template-columns: 8px 1fr; align-items: center; }
 .money-input b { color: var(--quiet); font-weight: 500; }
-.expense-work .work-head, .expense-work .work-row, .cc-work .work-head, .cc-work .work-row { grid-template-columns: 1.45fr 1fr .65fr .7fr .85fr; }
+.expense-work .work-head, .expense-work .work-row { grid-template-columns: 1.25fr 1.5fr .48fr .56fr .7fr; }
+.cc-work .work-head, .cc-work .work-row { grid-template-columns: 1.45fr 1fr .65fr .7fr .85fr; }
 .file-work .work-head, .file-work .work-row { grid-template-columns: 1.5fr .7fr .55fr .7fr .7fr; }
 .generic-work.cols-4 .work-head, .generic-work.cols-4 .work-row { grid-template-columns: repeat(4, minmax(95px, 1fr)) 28px; }
 .generic-work.cols-5 .work-head, .generic-work.cols-5 .work-row { grid-template-columns: repeat(5, minmax(90px, 1fr)) 28px; }
@@ -223,6 +224,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .burn { display: grid; grid-template-columns: 1fr 25px; gap: 6px; align-items: center; font-family: var(--font-geist-mono), monospace; font-size: 6px; }
 .burn i { height: 3px; background: var(--wash-2); }
 .burn i b { display: block; height: 100%; background: var(--ink); }
+.reconcile-caption { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 -6px; color: var(--quiet); font-size: 6px; font-weight: 800; letter-spacing: .1em; }
+.reconcile-section-block > header { display: grid; grid-template-columns: 25px 1fr auto; align-items: center; min-width: 720px; min-height: 27px; padding: 0 11px; border-top: 1px solid var(--line-strong); background: var(--wash); font-size: 6px; letter-spacing: .08em; text-transform: uppercase; }
+.reconcile-section-block > header b { display: grid; width: 17px; height: 17px; place-items: center; background: var(--ink); color: var(--bg); }
+.reconcile-section-block > header strong { font-size: 7px; }
+.reconcile-section-block > header span { color: var(--quiet); }
+.reconcile-line-row { width: 100%; border: 0; color: var(--ink); text-align: left; cursor: pointer; }
+.reconcile-line-row.selected { background: var(--wash-2); box-shadow: inset 2px 0 0 var(--ink); }
+.reconcile-line-ident { display: grid; grid-template-columns: 28px 1fr; align-items: center; }
+.reconcile-line-ident > b { font-family: var(--font-geist-mono), monospace; font-size: 8px; }
+.expense-allocation select, .reconcile-transaction-heading select { width: 100%; height: 26px; padding: 0 22px 0 7px; border: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--ink); font-size: 6px; font-weight: 800; }
+.expense-allocation small { overflow: hidden; max-width: 220px; text-overflow: ellipsis; white-space: nowrap; }
+.reconcile-transaction-heading > div { display: flex; align-items: end; gap: 12px; padding-bottom: 8px; }
+.reconcile-transaction-heading label { display: grid; grid-template-columns: auto 165px; align-items: center; gap: 7px; color: var(--quiet); font-size: 6px; font-weight: 800; }
+.reconcile-transaction-heading > div > span { color: var(--quiet); font-size: 6px; font-weight: 800; white-space: nowrap; }
 .positive { color: var(--success); }
 .negative { color: var(--danger); }
 .muted { color: var(--quiet); }
