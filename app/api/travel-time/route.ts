@@ -46,7 +46,8 @@ function firstRoute(payload: unknown) {
 
 function googleMapsKey() {
   const value = Reflect.get(env, "GOOGLE_MAPS_API_KEY");
-  return typeof value === "string" ? value.trim() : "";
+  const fallback = typeof process !== "undefined" ? process.env.GOOGLE_MAPS_API_KEY : undefined;
+  return typeof value === "string" ? value.trim() : typeof fallback === "string" ? fallback.trim() : "";
 }
 
 async function trafficRoute(origin: string, destination: string, departureTime: Date, fallbackMinutes: number): Promise<RouteEstimate> {

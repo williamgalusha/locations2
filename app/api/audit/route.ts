@@ -15,7 +15,9 @@ function database() {
 }
 
 function environment() {
-  return env as unknown as Record<string, string | undefined>;
+  const worker = env as unknown as Record<string, unknown>;
+  const node: Record<string, string | undefined> = typeof process !== "undefined" ? process.env : {};
+  return new Proxy({} as Record<string, string | undefined>, { get: (_target, key: string) => typeof worker[key] === "string" ? String(worker[key]) : node[key] });
 }
 
 function safeProjectId(value: unknown) {

@@ -127,6 +127,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(credentialAuth, /portal_users/);
   assert.match(credentialAuth, /portal_user_projects/);
   assert.match(credentialAuth, /authorizePortalRequest/);
+  assert.match(credentialAuth, /process\.env/);
   assert.match(accessRoute, /save_user/);
   assert.match(accessRoute, /set_user_active/);
   assert.match(accessRoute, /Administrator access is required/);
@@ -184,6 +185,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(schema, /expenseId:\s*text\("expense_id"\)/);
   assert.match(auditRoute, /https:\/\/api\.openai\.com\/v1\/responses/);
   assert.match(auditRoute, /OPENAI_API_KEY/);
+  assert.match(auditRoute, /process\.env/);
   assert.match(auditRoute, /input_file/);
   assert.match(auditRoute, /deterministicAudit/);
   assert.match(auditRoute, /LOWER\(category\) = 'backup'/);
@@ -191,6 +193,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(travelTimeRoute, /TRAFFIC_AWARE_OPTIMAL/);
   assert.match(travelTimeRoute, /airportLeadMinutes = tripType === "to_airport" \? 120 : 0/);
   assert.match(travelTimeRoute, /GOOGLE_MAPS_API_KEY/);
+  assert.match(travelTimeRoute, /process\.env/);
   assert.match(route, /versionId: textValue\(body\.versionId\)/);
   await access(new URL("dist/server/index.js", root));
   await access(new URL("public/og.png", root));

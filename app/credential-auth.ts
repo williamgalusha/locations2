@@ -37,7 +37,15 @@ type PortalUserRow = {
 const PASSWORD_ITERATIONS = 210_000;
 
 function portalEnvironment() {
-  return env as unknown as Record<string, string | undefined> & { DB?: D1Database };
+  const worker = env as unknown as Record<string, unknown> & { DB?: D1Database };
+  const node: Record<string, string | undefined> = typeof process !== "undefined" ? process.env : {};
+  const runtimeValue = (key: string) => typeof worker[key] === "string" ? String(worker[key]) : node[key];
+  return {
+    DB: worker.DB,
+    PORTAL_SESSION_SECRET: runtimeValue("PORTAL_SESSION_SECRET"),
+    PORTAL_BOOTSTRAP_USERNAME: runtimeValue("PORTAL_BOOTSTRAP_USERNAME"),
+    PORTAL_BOOTSTRAP_PASSWORD: runtimeValue("PORTAL_BOOTSTRAP_PASSWORD"),
+  };
 }
 
 export function portalAuthDatabase() {
