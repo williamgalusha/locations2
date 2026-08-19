@@ -28,6 +28,13 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /COST REPORT BY BUDGET LINE/);
   assert.match(portal, /Allocated budget line/);
   assert.match(portal, /expense-allocation/);
+  assert.match(portal, /BACKUP ALLOCATION/);
+  assert.match(portal, /UPLOAD \+ ALLOCATE/);
+  assert.match(portal, /Missing backup/);
+  assert.match(portal, /BUDGET AUDIT NOTES/);
+  assert.match(referenceUi, /AUDIT BUDGET/);
+  assert.match(referenceUi, /budget-audit-result/);
+  assert.match(referenceUi, /OPENAI \+ DOCUMENT REVIEW/);
   assert.match(referenceUi, /cover-grid-original/);
   assert.match(referenceUi, /aria-label="Click to log in"/);
   assert.doesNotMatch(referenceUi, />CLICK TO LOG IN</);
@@ -90,14 +97,17 @@ test("ships the BILL, INC. production control room instead of starter preview UI
 });
 
 test("includes durable records, file storage, budget history, and synchronized production actions", async () => {
-  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, route, fileRoute] = await Promise.all([
+  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, auditMigration, route, fileRoute, auditRoute, schema] = await Promise.all([
     readFile(new URL(".openai/hosting.json", root), "utf8"),
     readFile(new URL("drizzle/0000_cute_genesis.sql", root), "utf8"),
     readFile(new URL("drizzle/0001_typical_sabra.sql", root), "utf8"),
     readFile(new URL("drizzle/0002_blue_proudstar.sql", root), "utf8"),
     readFile(new URL("drizzle/0003_overconfident_northstar.sql", root), "utf8"),
+    readFile(new URL("drizzle/0004_concerned_siren.sql", root), "utf8"),
     readFile(new URL("app/api/portal/route.ts", root), "utf8"),
     readFile(new URL("app/api/files/route.ts", root), "utf8"),
+    readFile(new URL("app/api/audit/route.ts", root), "utf8"),
+    readFile(new URL("db/schema.ts", root), "utf8"),
   ]);
 
   assert.deepEqual(JSON.parse(hosting), { project_id: "appgprj_6a85bb83fa3481918167c327c66526d4", d1: "DB", r2: "FILES" });
@@ -109,11 +119,24 @@ test("includes durable records, file storage, budget history, and synchronized p
   }
   assert.ok(budgetMigration.includes("CREATE TABLE `budget_versions`"));
   for (const column of ["section_code", "item_code", "contact_email", "gallery", "deleted_at", "client_visible"]) assert.match(restoredMigration, new RegExp(column));
-  for (const action of ["create_project", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_location_status", "update_project_status"]) {
+  assert.match(auditMigration, /CREATE TABLE `budget_audits`/);
+  for (const column of ["budget_line_id", "expense_id", "vendor", "amount", "spend_date", "memo"]) assert.match(auditMigration, new RegExp(column));
+  for (const action of ["create_project", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
     assert.match(route, new RegExp(action));
   }
   assert.match(fileRoute, /bucket\(\)\.put/);
   assert.match(fileRoute, /bucket\(\)\.delete/);
+  assert.match(fileRoute, /budgetLineId/);
+  assert.match(fileRoute, /expenseId/);
+  assert.match(fileRoute, /isBackup = category\.toLowerCase\(\) === "backup"/);
+  assert.match(fileRoute, /isBackup \? budgetLineId : ""/);
+  assert.match(schema, /budgetAudits/);
+  assert.match(schema, /expenseId:\s*text\("expense_id"\)/);
+  assert.match(auditRoute, /https:\/\/api\.openai\.com\/v1\/responses/);
+  assert.match(auditRoute, /OPENAI_API_KEY/);
+  assert.match(auditRoute, /input_file/);
+  assert.match(auditRoute, /deterministicAudit/);
+  assert.match(auditRoute, /LOWER\(category\) = 'backup'/);
   await access(new URL("dist/server/index.js", root));
   await access(new URL("public/og.png", root));
 });
