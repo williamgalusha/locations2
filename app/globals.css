@@ -221,7 +221,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .generic-work.cols-4 .work-head, .generic-work.cols-4 .work-row { grid-template-columns: repeat(4, minmax(95px, 1fr)) 28px; }
 .generic-work.cols-5 .work-head, .generic-work.cols-5 .work-row { grid-template-columns: repeat(5, minmax(90px, 1fr)) 28px; }
 .crew-work .work-head, .crew-work .work-row { grid-template-columns: 1.35fr 1fr .7fr .65fr .7fr .9fr 25px; }
-.travel-work .work-head, .travel-work .work-row { grid-template-columns: 1fr .55fr 1.55fr .9fr .75fr .65fr 25px; }
+.travel-work .work-head, .travel-work .work-row { grid-template-columns: 1fr .55fr 1.55fr .9fr .75fr .65fr 58px; }
 .work-total { background: var(--wash); font-weight: 800; }
 .burn { display: grid; grid-template-columns: 1fr 25px; gap: 6px; align-items: center; font-family: var(--font-geist-mono), monospace; font-size: 6px; }
 .burn i { height: 3px; background: var(--wash-2); }
@@ -336,6 +336,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .paste-reservation textarea { min-height: 72px; padding: 7px; resize: none; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font-size: 7px; }
 .paste-reservation button { min-height: 28px; margin-top: 6px; border: 1px solid var(--line-strong); background: var(--inverse); color: var(--inverse-ink); font-size: 6px; font-weight: 800; cursor: pointer; }
 .paste-reservation button:disabled { opacity: .35; }
+.pickup-planner { margin: 14px 0; border: 1px solid var(--line-strong); background: var(--panel); }
+.pickup-planner > header { display: flex; align-items: center; justify-content: space-between; min-height: 46px; padding: 8px 11px; background: var(--inverse); color: var(--inverse-ink); }
+.pickup-planner > header span { display: block; margin-bottom: 4px; opacity: .58; font-size: 5px; font-weight: 800; letter-spacing: .13em; }
+.pickup-planner > header h2 { margin: 0; font-size: 13px; letter-spacing: -.03em; }
+.pickup-planner > header > b { padding: 5px 7px; border: 1px solid color-mix(in srgb, var(--inverse-ink) 55%, transparent); font-size: 5px; letter-spacing: .08em; }
+.pickup-planner form { display: grid; grid-template-columns: .75fr .75fr 1.35fr 1.35fr; gap: 8px; padding: 10px; }
+.pickup-planner form label { display: grid; gap: 4px; min-width: 0; color: var(--quiet); font-size: 5px; font-weight: 800; letter-spacing: .08em; }
+.pickup-planner form label.wide { grid-column: span 2; }
+.pickup-planner input, .pickup-planner select { width: 100%; height: 30px; padding: 0 7px; border: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--ink); font-size: 7px; }
+.pickup-planner label small { color: var(--quiet); font-size: 5px; font-weight: 500; letter-spacing: 0; }
+.pickup-planner form > button { align-self: end; min-height: 30px; }
+.pickup-plan-error { margin: 0 10px 10px; padding: 7px 8px; border: 1px solid var(--danger); color: var(--danger); font-size: 6px; }
+.pickup-result { display: grid; grid-template-columns: 1.4fr .65fr .7fr .9fr auto; align-items: stretch; border-top: 1px solid var(--line-strong); background: var(--wash); }
+.pickup-result > div { min-height: 62px; padding: 9px 10px; border-right: 1px solid var(--line); }
+.pickup-result span, .pickup-result strong, .pickup-result small { display: block; }
+.pickup-result span { color: var(--quiet); font-size: 5px; font-weight: 800; letter-spacing: .1em; }
+.pickup-result strong { margin-top: 6px; font-size: 10px; }
+.pickup-result small { margin-top: 4px; color: var(--muted); font-size: 5px; line-height: 1.35; }
+.pickup-result > button { min-width: 145px; border: 0; background: var(--inverse); color: var(--inverse-ink); font-size: 6px; font-weight: 800; cursor: pointer; }
+.travel-work .work-row > span:last-child { display: flex; align-items: center; justify-content: end; gap: 5px; }
+.travel-work .plan-flight { padding: 3px 5px; border: 1px solid var(--line); color: var(--ink); font-size: 5px; font-weight: 800; }
 
 .call-sheet { max-width: 900px; margin: 16px auto 0; padding: 26px; border: 1px solid var(--line-strong); background: var(--panel); box-shadow: 0 18px 55px var(--shadow); }
 .call-sheet > header { display: grid; grid-template-columns: 1.5fr .65fr; gap: 20px; padding-bottom: 18px; border-bottom: 4px solid var(--ink); }
@@ -847,6 +868,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .location-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .travel-import { grid-template-columns: 1fr 1fr; }
   .paste-reservation { grid-column: 1 / -1; border-top: 1px solid var(--line); }
+  .pickup-planner form { grid-template-columns: 1fr 1fr; }
+  .pickup-result { grid-template-columns: 1fr 1fr; }
+  .pickup-result > div:nth-child(2) { border-right: 0; }
+  .pickup-result > button { grid-column: 1 / -1; min-height: 34px; }
   .reference-location-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
@@ -889,6 +914,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .travel-import { grid-template-columns: 1fr; }
   .travel-import .drop, .travel-options { border-right: 0; border-bottom: 1px solid var(--line); }
   .paste-reservation { grid-column: auto; }
+  .pickup-planner > header { align-items: start; flex-direction: column; gap: 8px; }
+  .pickup-planner form { grid-template-columns: 1fr; }
+  .pickup-planner form label.wide { grid-column: auto; }
+  .pickup-result { grid-template-columns: 1fr; }
+  .pickup-result > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .pickup-result > button { grid-column: auto; }
   .location-grid { grid-template-columns: 1fr; }
   .client-grid { grid-template-columns: 1fr; }
   .client-grid article, .client-grid article:nth-child(3n + 1) { border-left: 1px solid #444; }
