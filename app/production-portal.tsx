@@ -69,9 +69,11 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   const [toast, setToast] = useState("");
   const [query, setQuery] = useState("");
   const [projectMenu, setProjectMenu] = useState(false);
-  const [userMenu, setUserMenu] = useState(false);
+  const [userControls, setUserControls] = useState(false);
   const [clientPreview, setClientPreview] = useState(false);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [compactRows, setCompactRows] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
   const filePicker = useRef<HTMLInputElement>(null);
   const ccPicker = useRef<HTMLInputElement>(null);
   const travelPicker = useRef<HTMLInputElement>(null);
@@ -82,12 +84,26 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     const stored = window.localStorage.getItem("bill-theme");
     const next = stored === "dark" || stored === "light" ? stored : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     setTheme(next); document.documentElement.dataset.theme = next;
+    const compact = window.localStorage.getItem("bill-compact-rows") === "true";
+    const reduced = window.localStorage.getItem("bill-reduce-motion") === "true";
+    setCompactRows(compact); setReduceMotion(reduced);
+    document.documentElement.dataset.density = compact ? "compact" : "comfortable";
+    document.documentElement.dataset.reduceMotion = reduced ? "true" : "false";
   }, []);
   useEffect(() => { if (user) loadProject(); }, [Boolean(user)]);
 
-  function toggleTheme() {
-    const next = theme === "light" ? "dark" : "light";
+  function setThemeMode(next: "light" | "dark") {
     setTheme(next); document.documentElement.dataset.theme = next; window.localStorage.setItem("bill-theme", next);
+  }
+
+  function toggleTheme() { setThemeMode(theme === "light" ? "dark" : "light"); }
+
+  function setCompactMode(next: boolean) {
+    setCompactRows(next); document.documentElement.dataset.density = next ? "compact" : "comfortable"; window.localStorage.setItem("bill-compact-rows", String(next));
+  }
+
+  function setMotionMode(next: boolean) {
+    setReduceMotion(next); document.documentElement.dataset.reduceMotion = next ? "true" : "false"; window.localStorage.setItem("bill-reduce-motion", String(next));
   }
 
   async function loadProject(projectId?: string) {
@@ -186,7 +202,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
   async function logOut() {
     if (user?.credential) await fetch("/api/credential-login", { method: "DELETE" });
-    setPreviewUser(null); setData(null); setEntered(false); setUserMenu(false);
+    setPreviewUser(null); setData(null); setEntered(false); setUserControls(false);
     if (initialUser?.credential) window.location.reload();
   }
 
@@ -207,7 +223,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
       <button className="brand" onClick={() => openView("control")}><img src="/bill-inc.png" alt="BILL, INC." /><small>PRODUCTION CONTROL</small></button>
       <div className="side-project"><span>{data.project.code}</span><strong>{data.project.name}</strong><small>{data.project.client}</small></div>
       <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && data.expenses.some((expense) => expense.status === "needs_review") && <i>{data.expenses.filter((expense) => expense.status === "needs_review").length}</i>}</button>)}</div>)}</nav>
-      <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserMenu((value) => !value)}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>•••</b></button>{userMenu && <div className="side-user-menu"><button onClick={toggleTheme}>{theme === "light" ? "DARK MODE" : "LIGHT MODE"}</button>{localPreview || user.credential ? <button onClick={logOut}>LOG OUT →</button> : <a href="/signout-with-chatgpt?return_to=/">LOG OUT →</a>}</div>}</div>
+      <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserControls(true)} aria-haspopup="dialog" aria-expanded={userControls}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>→</b></button></div>
     </aside>
 
     <section className="workspace">
@@ -238,8 +254,29 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
     {composer && <ComposerModal type={composer} lines={data.budgetLines} saving={saving} close={() => setComposer(null)} submit={mutate} />}
     {pendingBackup && <BackupAllocationModal file={pendingBackup} lines={data.budgetLines} saving={saving} close={() => setPendingBackup(null)} upload={saveBackupAllocation} />}
+    {userControls && <UserControlsDrawer user={user} project={data.project} theme={theme} compactRows={compactRows} reduceMotion={reduceMotion} close={() => setUserControls(false)} setTheme={setThemeMode} setCompactRows={setCompactMode} setReduceMotion={setMotionMode} logOut={logOut} externalLogout={!localPreview && !user.credential} />}
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
   </main>;
+}
+
+function UserControlsDrawer({ user, project, theme, compactRows, reduceMotion, close, setTheme, setCompactRows, setReduceMotion, logOut, externalLogout }: { user: NonNullable<User>; project: Project; theme: "light" | "dark"; compactRows: boolean; reduceMotion: boolean; close: () => void; setTheme: (theme: "light" | "dark") => void; setCompactRows: (value: boolean) => void; setReduceMotion: (value: boolean) => void; logOut: () => Promise<void>; externalLogout: boolean }) {
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [close]);
+
+  return <div className="user-controls-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <aside className="user-controls-drawer" role="dialog" aria-modal="true" aria-labelledby="user-controls-title">
+      <header><div><span>ACCOUNT</span><h2 id="user-controls-title">USER CONTROLS</h2></div><button onClick={close} aria-label="Close user controls">×</button></header>
+      <section className="user-profile-card"><span>{initials(user.name)}</span><div><strong>{user.name}</strong><small>{user.email}</small></div><b>PRODUCTION</b></section>
+      <section className="user-control-section"><p>ACCESS</p><dl><div><dt>ROLE</dt><dd>Production administrator</dd></div><div><dt>CURRENT PRODUCTION</dt><dd>{project.name}</dd></div><div><dt>JOB CODE</dt><dd>{project.code}</dd></div></dl></section>
+      <section className="user-control-section"><p>APPEARANCE</p><div className="theme-choice" role="group" aria-label="Color mode"><button className={theme === "light" ? "active" : ""} onClick={() => setTheme("light")} aria-pressed={theme === "light"}><i>○</i><span>LIGHT MODE</span></button><button className={theme === "dark" ? "active" : ""} onClick={() => setTheme("dark")} aria-pressed={theme === "dark"}><i>●</i><span>DARK MODE</span></button></div></section>
+      <section className="user-control-section"><p>WORKSPACE PREFERENCES <span>SAVED ON THIS DEVICE</span></p><button className={compactRows ? "user-setting active" : "user-setting"} onClick={() => setCompactRows(!compactRows)} aria-pressed={compactRows}><span><strong>Compact data rows</strong><small>Fit more budget, backup and production lines on screen.</small></span><i>{compactRows ? "ON" : "OFF"}</i></button><button className={reduceMotion ? "user-setting active" : "user-setting"} onClick={() => setReduceMotion(!reduceMotion)} aria-pressed={reduceMotion}><span><strong>Reduce interface motion</strong><small>Minimize animation and movement throughout the workspace.</small></span><i>{reduceMotion ? "ON" : "OFF"}</i></button></section>
+      <section className="user-control-section user-security"><p>SECURITY</p><div><span>SESSION</span><strong>AUTHENTICATED</strong></div><div><span>SIGN-IN METHOD</span><strong>{user.credential ? "PORTAL CREDENTIAL" : "CHATGPT ACCOUNT"}</strong></div></section>
+      <footer>{externalLogout ? <a href="/signout-with-chatgpt?return_to=/">LOG OUT <span>→</span></a> : <button onClick={() => void logOut()}>LOG OUT <span>→</span></button>}<small>Preferences apply only to this browser.</small></footer>
+    </aside>
+  </div>;
 }
 
 function LoginScreen({ user, isLocal, enter, preview }: { user: User; isLocal: boolean; enter: () => void; preview: () => void }) {
