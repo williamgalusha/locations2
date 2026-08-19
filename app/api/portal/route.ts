@@ -92,7 +92,16 @@ async function ensureSchema() {
     db.prepare(`CREATE TABLE IF NOT EXISTS file_assets (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, object_key TEXT NOT NULL,
       filename TEXT NOT NULL, content_type TEXT NOT NULL, size REAL NOT NULL,
-      category TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL
+      category TEXT NOT NULL, status TEXT NOT NULL,
+      budget_line_id TEXT NOT NULL DEFAULT '', expense_id TEXT NOT NULL DEFAULT '',
+      vendor TEXT NOT NULL DEFAULT '', amount REAL NOT NULL DEFAULT 0,
+      spend_date TEXT NOT NULL DEFAULT '', memo TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS budget_audits (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, source TEXT NOT NULL,
+      status TEXT NOT NULL, summary TEXT NOT NULL, notes TEXT NOT NULL,
+      created_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS budget_project_idx ON budget_lines (project_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS budget_version_project_idx ON budget_versions (project_id, created_at)"),
@@ -101,6 +110,7 @@ async function ensureSchema() {
     db.prepare("CREATE INDEX IF NOT EXISTS activity_project_idx ON activities (project_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS module_project_idx ON module_records (project_id, module)"),
     db.prepare("CREATE INDEX IF NOT EXISTS file_project_idx ON file_assets (project_id)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS audit_project_idx ON budget_audits (project_id, created_at)"),
   ]);
   const additions = [
     ["projects", "contact TEXT NOT NULL DEFAULT ''"], ["projects", "contact_email TEXT NOT NULL DEFAULT ''"],
@@ -115,6 +125,9 @@ async function ensureSchema() {
     ["locations", "square_feet TEXT NOT NULL DEFAULT '—'"], ["locations", "availability TEXT NOT NULL DEFAULT 'Availability Pending'"],
     ["locations", "blurb TEXT NOT NULL DEFAULT ''"], ["locations", "gallery TEXT NOT NULL DEFAULT '[]'"],
     ["locations", "deleted_at TEXT NOT NULL DEFAULT ''"], ["locations", "client_visible REAL NOT NULL DEFAULT 1"],
+    ["file_assets", "budget_line_id TEXT NOT NULL DEFAULT ''"], ["file_assets", "expense_id TEXT NOT NULL DEFAULT ''"],
+    ["file_assets", "vendor TEXT NOT NULL DEFAULT ''"], ["file_assets", "amount REAL NOT NULL DEFAULT 0"],
+    ["file_assets", "spend_date TEXT NOT NULL DEFAULT ''"], ["file_assets", "memo TEXT NOT NULL DEFAULT ''"],
   ];
   for (const [table, column] of additions) {
     try { await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column}`).run(); } catch { /* column already exists */ }
@@ -200,7 +213,7 @@ async function portalData(projectId: string) {
   const db = database();
   const projectsResult = await db.prepare("SELECT * FROM projects ORDER BY created_at DESC").all();
   const chosen = projectsResult.results.some((project) => project.id === projectId) ? projectId : String(projectsResult.results[0]?.id ?? FALLBACK_PROJECT_ID);
-  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult] = await Promise.all([
+  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult, auditResult] = await Promise.all([
     db.prepare("SELECT * FROM projects WHERE id = ?").bind(chosen).first(),
     db.prepare("SELECT * FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(chosen).all(),
     db.prepare("SELECT * FROM budget_versions WHERE project_id = ? ORDER BY created_at DESC").bind(chosen).all(),
@@ -209,6 +222,7 @@ async function portalData(projectId: string) {
     db.prepare("SELECT * FROM activities WHERE project_id = ? ORDER BY created_at DESC LIMIT 40").bind(chosen).all(),
     db.prepare("SELECT * FROM module_records WHERE project_id = ? ORDER BY created_at").bind(chosen).all(),
     db.prepare("SELECT * FROM file_assets WHERE project_id = ? ORDER BY created_at DESC").bind(chosen).all(),
+    db.prepare("SELECT * FROM budget_audits WHERE project_id = ? ORDER BY created_at DESC LIMIT 20").bind(chosen).all(),
   ]);
   const records = moduleResult.results.map((record) => ({ ...record, data: JSON.parse(String(record.data || "{}")) }));
   const budgetVersions = versionResult.results.map((version) => ({ ...version, snapshot: JSON.parse(String(version.snapshot || "[]")) }));
@@ -221,6 +235,7 @@ async function portalData(projectId: string) {
     locations: locationResult.results,
     activities: activityResult.results,
     files: fileResult.results,
+    audits: auditResult.results,
     records,
   };
 }
@@ -427,6 +442,12 @@ export async function POST(request: Request) {
         ]);
         await logActivity(projectId, "expense", `${expense.vendor} allocated to ${budgetLine.item_code || budgetLine.item_name || budgetLine.category}`, actor);
       }
+    } else if (action === "update_backup_status") {
+      const status = textValue(body.status, "needs_review");
+      const allowed = new Set(["needs_review", "verified"]);
+      if (!allowed.has(status)) throw new Error("Unsupported backup status.");
+      await db.prepare("UPDATE file_assets SET status = ? WHERE id = ? AND project_id = ?").bind(status, textValue(body.id), projectId).run();
+      await logActivity(projectId, "file", `Backup marked ${status.replaceAll("_", " ")}`, actor);
     } else if (action === "add_location") {
       const name = textValue(body.name, "Untitled location");
       const imageUrl = textValue(body.imageUrl);
