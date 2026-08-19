@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1787149088450,
+      "tag": "0000_cute_genesis",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787150827234,
+      "tag": "0001_typical_sabra",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787152238783,
+      "tag": "0002_blue_proudstar",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,323 @@
+"use client";
+
+import type { ChangeEvent, DragEvent, FormEvent, ReactNode, RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+
+type Project = { id: string; name: string; client: string; code: string; status: string; shoot_start: string; shoot_end: string; currency: string };
+type BudgetLine = { id: string; category: string; description: string; estimate: number; actual: number };
+type BudgetSnapshot = Pick<BudgetLine, "id" | "category" | "description" | "estimate">;
+type BudgetVersion = { id: string; name: string; status: string; snapshot: BudgetSnapshot[]; created_at: string };
+type Expense = { id: string; budget_line_id: string; vendor: string; amount: number; spend_date: string; status: string; memo: string };
+type Location = { id: string; name: string; city: string; rate: number; status: string; image_url: string; tags: string; note: string; client_note: string };
+type Activity = { id: string; kind: string; message: string; actor: string; created_at: string };
+type RecordData = Record<string, string>;
+type ModuleRecord = { id: string; module: string; data: RecordData; created_at: string; updated_at: string };
+type FileAsset = { id: string; object_key: string; filename: string; content_type: string; size: number; category: string; status: string; created_at: string };
+type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[] };
+type View = "control" | "budget" | "reconcile" | "backup" | "cc" | "production" | "crew" | "schedule" | "travel" | "callsheet" | "locations" | "client" | "activity";
+type Composer = "budget" | "expense" | "location" | "project" | "production" | "crew" | "schedule" | "travel" | null;
+type User = { name: string; email: string } | null;
+type Mutate = (payload: Record<string, unknown>, success: string) => Promise<void>;
+
+const groups: { label: string; items: { id: View; label: string }[] }[] = [
+  { label: "Workspace", items: [{ id: "control", label: "Control Room" }] },
+  { label: "Finance", items: [{ id: "budget", label: "Budget" }, { id: "reconcile", label: "Reconciliation" }, { id: "backup", label: "Backup" }, { id: "cc", label: "CC Log" }] },
+  { label: "Operations", items: [{ id: "production", label: "Production Sheet" }, { id: "crew", label: "Headcount" }, { id: "schedule", label: "Schedule" }, { id: "travel", label: "Travel" }, { id: "callsheet", label: "Call Sheet" }] },
+  { label: "Client", items: [{ id: "locations", label: "Locations" }, { id: "client", label: "Client Portal" }] },
+  { label: "System", items: [{ id: "activity", label: "Activity" }] },
+];
+
+const money = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+const compactMoney = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 1 });
+const titleCase = (value: string) => value.replaceAll("_", " ").replace(/(^|\s)\S/g, (letter) => letter.toUpperCase());
+const formatDate = (value: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(`${value}T12:00:00`));
+const relativeTime = (value: string) => { const hours = Math.max(1, Math.round((Date.now() - new Date(value).getTime()) / 3600000)); return hours < 24 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`; };
+const initials = (name: string) => name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join("") || "BI";
+const moduleRows = (data: PortalData, module: string) => data.records.filter((record) => record.module === module);
+const pad = (value: number) => String(value).padStart(2, "0");
+
+export default function ProductionPortal({ initialUser }: { initialUser: User }) {
+  const [previewUser, setPreviewUser] = useState<User>(null);
+  const [entered, setEntered] = useState(false);
+  const [data, setData] = useState<PortalData | null>(null);
+  const [active, setActive] = useState<View>("control");
+  const [composer, setComposer] = useState<Composer>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [query, setQuery] = useState("");
+  const [projectMenu, setProjectMenu] = useState(false);
+  const [userMenu, setUserMenu] = useState(false);
+  const [clientPreview, setClientPreview] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [isLocal, setIsLocal] = useState(false);
+  const filePicker = useRef<HTMLInputElement>(null);
+  const ccPicker = useRef<HTMLInputElement>(null);
+  const travelPicker = useRef<HTMLInputElement>(null);
+  const user = initialUser ?? previewUser;
+  const localPreview = !initialUser && Boolean(previewUser);
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem("bill-theme");
+    const next = stored === "dark" || stored === "light" ? stored : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    setTheme(next); document.documentElement.dataset.theme = next; setIsLocal(["localhost", "127.0.0.1"].includes(window.location.hostname));
+  }, []);
+  useEffect(() => { if (user) loadProject(); }, [Boolean(user)]);
+
+  function toggleTheme() {
+    const next = theme === "light" ? "dark" : "light";
+    setTheme(next); document.documentElement.dataset.theme = next; window.localStorage.setItem("bill-theme", next);
+  }
+
+  async function loadProject(projectId?: string) {
+    setError("");
+    try {
+      const response = await fetch(`/api/portal${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error ?? "Could not load production data.");
+      setData(payload); setProjectMenu(false);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load production data."); }
+  }
+
+  const totals = useMemo(() => {
+    const estimate = data?.budgetLines.reduce((sum, line) => sum + Number(line.estimate), 0) ?? 0;
+    const committed = data?.expenses.reduce((sum, expense) => sum + Number(expense.amount), 0) ?? 0;
+    const actual = data?.expenses.filter((expense) => expense.status === "matched").reduce((sum, expense) => sum + Number(expense.amount), 0) ?? 0;
+    return { estimate, committed, actual, remaining: estimate - committed, percent: estimate ? Math.round((committed / estimate) * 100) : 0 };
+  }, [data]);
+
+  async function mutate(payload: Record<string, unknown>, success: string) {
+    if (!data && payload.action !== "create_project") return;
+    setSaving(true); setError("");
+    try {
+      const response = await fetch("/api/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, projectId: data?.project.id }) });
+      const next = await response.json();
+      if (!response.ok) throw new Error(next.error ?? "That change could not be saved.");
+      setData(next); setComposer(null); setToast(success); window.setTimeout(() => setToast(""), 2600);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "That change could not be saved."); }
+    finally { setSaving(false); }
+  }
+
+  async function uploadBackup(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; if (!file || !data) return;
+    setSaving(true);
+    try {
+      const form = new FormData(); form.set("file", file); form.set("projectId", data.project.id); form.set("category", "Backup");
+      const response = await fetch("/api/files", { method: "POST", body: form }); const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Upload failed.");
+      await loadProject(data.project.id); setToast(`${file.name} uploaded`); window.setTimeout(() => setToast(""), 2600);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Upload failed."); }
+    finally { setSaving(false); event.target.value = ""; }
+  }
+
+  async function removeFile(file: FileAsset) {
+    if (!data) return;
+    const response = await fetch("/api/files", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: file.id, key: file.object_key, projectId: data.project.id }) });
+    if (response.ok) { await loadProject(data.project.id); setToast("File removed"); window.setTimeout(() => setToast(""), 2200); }
+  }
+
+  async function importStatement(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]; if (!file || !data || !data.budgetLines[0]) return;
+    try {
+      const csvLines = (await file.text()).split(/\r?\n/).filter(Boolean); const headers = parseCsvLine(csvLines.shift() ?? "").map((value) => value.toLowerCase());
+      const column = (names: string[]) => headers.findIndex((header) => names.some((name) => header.includes(name)));
+      const dateIndex = column(["date"]), vendorIndex = column(["merchant", "vendor", "description"]), amountIndex = column(["amount", "total"]);
+      const rows = csvLines.map(parseCsvLine).map((values) => ({ date: normalizeDate(values[dateIndex] ?? ""), vendor: values[vendorIndex] ?? "Imported charge", amount: Math.abs(Number(String(values[amountIndex] ?? "0").replace(/[$,()]/g, (match) => match === "(" ? "-" : ""))) })).filter((row) => Number.isFinite(row.amount) && row.amount !== 0);
+      await mutate({ action: "import_expenses", budgetLineId: data.budgetLines[0].id, rows }, `${rows.length} card charges imported`);
+    } catch { setError("That CSV could not be read. Include date, merchant, and amount columns."); }
+    finally { event.target.value = ""; }
+  }
+
+  function openView(view: View) { setActive(view); setQuery(""); if (view !== "client") setClientPreview(false); }
+
+  if (!entered) return <LoginScreen user={user} isLocal={isLocal} enter={() => setEntered(true)} preview={() => { setPreviewUser({ name: "Jamie Rivera", email: "Local preview" }); setEntered(true); }} />;
+  if (!user) return <LoginScreen user={null} isLocal={isLocal} enter={() => undefined} preview={() => { setPreviewUser({ name: "Jamie Rivera", email: "Local preview" }); setEntered(true); }} />;
+  if (!data && !error) return <div className="portal-loading"><span>B,</span><p>OPENING PRODUCTION WORKSPACE…</p></div>;
+  if (!data) return <div className="portal-error"><span>BILL, INC.</span><h1>THE PRODUCTION COULD NOT OPEN.</h1><p>{error}</p><button onClick={() => loadProject()}>TRY AGAIN</button></div>;
+
+  const search = query.toLowerCase();
+  const lines = data.budgetLines.filter((line) => `${line.category} ${line.description}`.toLowerCase().includes(search));
+  const expenses = data.expenses.filter((expense) => `${expense.vendor} ${expense.memo}`.toLowerCase().includes(search));
+  const locations = data.locations.filter((location) => `${location.name} ${location.city} ${location.tags}`.toLowerCase().includes(search));
+
+  return <main className="portal-shell">
+    <aside className="sidebar">
+      <button className="brand" onClick={() => openView("control")}><span className="brand-word">BILL, INC.</span><small>PRODUCTION CONTROL</small></button>
+      <div className="side-project"><span>{data.project.code}</span><strong>{data.project.name}</strong><small>{data.project.client}</small></div>
+      <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && data.expenses.some((expense) => expense.status === "needs_review") && <i>{data.expenses.filter((expense) => expense.status === "needs_review").length}</i>}</button>)}</div>)}</nav>
+      <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserMenu((value) => !value)}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>•••</b></button>{userMenu && <div className="side-user-menu"><button onClick={toggleTheme}>{theme === "light" ? "DARK MODE" : "LIGHT MODE"}</button>{localPreview ? <button onClick={() => { setPreviewUser(null); setData(null); setEntered(false); setUserMenu(false); }}>EXIT PREVIEW →</button> : <a href="/signout-with-chatgpt?return_to=/">LOG OUT →</a>}</div>}</div>
+    </aside>
+
+    <section className="workspace">
+      <header className="topbar">
+        <div className="project-switch-wrap"><button className="project-switcher" onClick={() => setProjectMenu((value) => !value)}><span className="project-stamp">{data.project.code.slice(0, 2)}</span><span><small>CURRENT PRODUCTION</small><strong>{data.project.name}</strong></span><b>⌄</b></button>{projectMenu && <div className="project-menu"><p>PRODUCTIONS</p>{data.projects.map((project) => <button className={project.id === data.project.id ? "current" : ""} onClick={() => loadProject(project.id)} key={project.id}><span><strong>{project.name}</strong><small>{project.client} · {project.code}</small></span><b>{project.id === data.project.id ? "✓" : "→"}</b></button>)}<button className="new-project" onClick={() => { setProjectMenu(false); setComposer("project"); }}>＋ NEW PRODUCTION</button></div>}</div>
+        <label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this production" aria-label="Search this production" /><kbd>⌘ K</kbd></label>
+        <div className="top-actions"><span className="sync-state">● SAVED</span><button className="theme-button" onClick={toggleTheme} aria-label={`Use ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "◐" : "◑"}</button><button className="present-button" onClick={() => { openView("client"); setClientPreview(true); }}>CLIENT VIEW ↗</button></div>
+      </header>
+      <div className="mobile-nav">{groups.flatMap((group) => group.items).map((item) => <button className={active === item.id ? "active" : ""} onClick={() => openView(item.id)} key={item.id}>{item.label}</button>)}</div>
+
+      <div className="content">
+        {error && <div className="inline-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
+        {active === "control" && <ControlRoom data={data} totals={totals} openView={openView} openComposer={setComposer} mutate={mutate} />}
+        {active === "budget" && <BudgetView data={data} lines={lines} totals={totals} expenses={data.expenses} openComposer={setComposer} mutate={mutate} />}
+        {active === "reconcile" && <ReconcileView expenses={expenses} lines={data.budgetLines} openComposer={setComposer} mutate={mutate} />}
+        {active === "backup" && <BackupView files={data.files} filePicker={filePicker} uploadBackup={uploadBackup} removeFile={removeFile} saving={saving} />}
+        {active === "cc" && <CCView expenses={expenses} lines={data.budgetLines} ccPicker={ccPicker} importStatement={importStatement} openComposer={setComposer} mutate={mutate} />}
+        {active === "production" && <RecordView title="Production Sheet" kicker="Operations · Live list" copy="Open items, vendor decisions, and wrap-book notes in one shared sheet." records={moduleRows(data, "production")} columns={["section", "item", "owner", "status"]} open={() => setComposer("production")} remove={(id) => mutate({ action: "delete_module_record", id }, "Production item removed")} />}
+        {active === "crew" && <HeadcountView crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} open={() => setComposer("crew")} mutate={mutate} />}
+        {active === "travel" && <TravelView records={moduleRows(data, "travel")} picker={travelPicker} open={() => setComposer("travel")} mutate={mutate} />}
+        {active === "schedule" && <ScheduleView records={moduleRows(data, "schedule")} open={() => setComposer("schedule")} mutate={mutate} publish={() => mutate({ action: "publish_client_item", kind: "Schedule", label: `${data.project.name} · Shooting Schedule` }, "Schedule pushed to client portal")} />}
+        {active === "callsheet" && <CallSheet project={data.project} crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} travel={moduleRows(data, "travel")} locations={data.locations} publish={() => mutate({ action: "publish_client_item", kind: "Call Sheet", label: `${data.project.name} · Day 01 Call Sheet` }, "Call sheet pushed to client portal")} />}
+        {active === "locations" && <LocationsView project={data.project} locations={locations} open={() => setComposer("location")} mutate={mutate} />}
+        {active === "client" && <ClientPortal data={data} totals={totals} preview={clientPreview} setPreview={setClientPreview} publish={mutate} />}
+        {active === "activity" && <ActivityView activities={data.activities} />}
+      </div>
+    </section>
+
+    {composer && <ComposerModal type={composer} lines={data.budgetLines} saving={saving} close={() => setComposer(null)} submit={mutate} />}
+    {toast && <div className="toast"><span>✓</span>{toast}</div>}
+  </main>;
+}
+
+function LoginScreen({ user, isLocal, enter, preview }: { user: User; isLocal: boolean; enter: () => void; preview: () => void }) {
+  return <main className="login-screen"><div className="login-grid" aria-hidden="true">{Array.from({ length: 24 }, (_, index) => <i style={{ animationDelay: `${index * 70}ms` }} key={index} />)}</div><header><strong>BILL, INC.</strong><span>PRODUCTION CONTROL</span></header><section><p>{user ? `WELCOME BACK · ${user.name.toUpperCase()}` : "ONE WORKSPACE. EVERY MOVING PART."}</p><h1>PRODUCTION,<br />UNDER CONTROL.</h1><span>Budgets, actuals, travel, crew, schedules, locations and client approvals—kept in sync from prep through wrap.</span><div>{user ? <button className="enter-control" onClick={enter}>ENTER PRODUCTION CONTROL <b>→</b></button> : <a href="/signin-with-chatgpt?return_to=/">SIGN IN WITH CHATGPT <b>→</b></a>}{isLocal && !user && <button onClick={preview}>PREVIEW WORKSPACE</button>}</div></section><footer><span>SECURE PRODUCTION PORTAL</span><span>© 2026 BILL, INC.</span></footer></main>;
+}
+
+function ControlRoom({ data, totals, openView, openComposer, mutate }: { data: PortalData; totals: { estimate: number; committed: number; actual: number; remaining: number; percent: number }; openView: (view: View) => void; openComposer: (composer: Composer) => void; mutate: Mutate }) {
+  const review = data.expenses.filter((expense) => expense.status === "needs_review").length;
+  const modules: { tag: string; title: string; view: View; count: string }[] = [
+    { tag: "Finance", title: "Budget", view: "budget", count: `${data.budgetVersions.length} versions` }, { tag: "Finance", title: "Reconciliation", view: "reconcile", count: `${review} to review` }, { tag: "Finance", title: "Backup", view: "backup", count: `${data.files.length} files` }, { tag: "Finance", title: "CC Log", view: "cc", count: `${data.expenses.length} charges` },
+    { tag: "Operations", title: "Production Sheet", view: "production", count: `${moduleRows(data, "production").length} items` }, { tag: "Operations", title: "Headcount", view: "crew", count: `${moduleRows(data, "crew").length} people` }, { tag: "Operations", title: "Schedule", view: "schedule", count: `${moduleRows(data, "schedule").length} rows` }, { tag: "Logistics", title: "Travel Charts", view: "travel", count: `${moduleRows(data, "travel").length} records` },
+    { tag: "Generated", title: "Call Sheet", view: "callsheet", count: "Synced live" }, { tag: "Scouting", title: "Locations", view: "locations", count: `${data.locations.length} options` }, { tag: "Client", title: "Client Portal", view: "client", count: `${moduleRows(data, "client_share").length} shared` },
+  ];
+  return <section className="control-room"><div className="control-title"><div><p className="kicker">BILL, INC. · PRODUCTION</p><h1>CONTROL ROOM</h1><p>{data.project.name} · {data.project.client}</p></div><div className="control-actions"><label className="status-select"><span /><select value={data.project.status} onChange={(event) => mutate({ action: "update_project_status", status: event.target.value }, "Project status updated")}><option>Planning</option><option>Pre-production</option><option>Production</option><option>Post-production</option><option>On hold</option><option>Delivered</option></select></label><button className="black-button" onClick={() => openComposer("expense")}>＋ EXPENSE</button></div></div>
+    <div className="control-strip"><div><span>JOB</span><strong>{data.project.code}</strong></div><div><span>CLIENT</span><strong>{data.project.client}</strong></div><div><span>SHOOT</span><strong>{formatDate(data.project.shoot_start)}—{formatDate(data.project.shoot_end)}</strong></div><div><span>STATUS</span><strong>{data.project.status}</strong></div></div>
+    <div className="control-finance"><article><p>APPROVED ESTIMATE</p><strong>{money.format(totals.estimate)}</strong><div className="wide-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><footer><span>COMMITTED <b>{money.format(totals.committed)}</b></span><span>ACTUAL <b>{money.format(totals.actual)}</b></span><span>REMAINING <b>{money.format(totals.remaining)}</b></span></footer></article><aside><p>SYNC STATUS</p><strong>CALL SHEET LIVE</strong><span>Crew and schedule changes flow through automatically.</span><button onClick={() => openView("callsheet")}>OPEN GENERATED CALL SHEET →</button></aside></div>
+    <div className="section-label"><span>PRODUCTION MODULES</span><b>{modules.length} LIVE</b></div><div className="module-grid">{modules.map((module) => <button onClick={() => openView(module.view)} key={module.title}><div><span>{module.tag}</span><b>↗</b></div><h2>{module.title}</h2><footer><span>{module.count}</span><b>→</b></footer></button>)}</div>
+    <div className="control-lower"><article className="attention"><Heading kicker="Needs attention" title="Keep the day moving" /><button onClick={() => openView("reconcile")}><span>!</span><strong>{review} card charge{review === 1 ? "" : "s"} to review</strong><b>→</b></button><button onClick={() => openView("travel")}><span>↗</span><strong>Travel imports can create hotel and car holds</strong><b>→</b></button><button onClick={() => openView("locations")}><span>⌂</span><strong>Location board ready for client review</strong><b>→</b></button></article><article className="recent"><Heading kicker="Live activity" title="Latest across production" /><ActivityList activities={data.activities.slice(0, 4)} /></article></div></section>;
+}
+
+function BudgetView({ data, lines, totals, expenses, openComposer, mutate }: { data: PortalData; lines: BudgetLine[]; totals: { estimate: number; committed: number; actual: number; remaining: number; percent: number }; expenses: Expense[]; openComposer: (composer: Composer) => void; mutate: Mutate }) {
+  const [compareId, setCompareId] = useState(data.budgetVersions.find((version) => version.status !== "confirmed")?.id ?? data.budgetVersions[0]?.id ?? "");
+  const baseline = data.budgetVersions.find((version) => version.id === compareId);
+  const baselineMap = new Map((baseline?.snapshot ?? []).map((line) => [line.id, Number(line.estimate)]));
+  const actualFor = (id: string) => expenses.filter((expense) => expense.budget_line_id === id && expense.status === "matched").reduce((sum, expense) => sum + Number(expense.amount), 0);
+  const committedFor = (id: string) => expenses.filter((expense) => expense.budget_line_id === id).reduce((sum, expense) => sum + Number(expense.amount), 0);
+  return <Page kicker="Finance · Versioned estimate" title="Budget" copy="Edit in place, preserve every version, and make client-facing changes explicit." actions={<><button className="outline-button" onClick={() => mutate({ action: "save_budget_version", confirm: false }, "Draft budget version saved")}>SAVE VERSION</button><button className="black-button" onClick={() => openComposer("budget")}>＋ LINE</button></>}>
+    <div className="dense-metrics"><Metric label="Estimate" value={money.format(totals.estimate)} note="Working version" /><Metric label="Committed" value={money.format(totals.committed)} note={`${totals.percent}% of estimate`} /><Metric label="Actual" value={money.format(totals.actual)} note="Matched costs" /><Metric label="Remaining" value={money.format(totals.remaining)} note="After commitments" /></div>
+    <div className="budget-toolbar"><div><span>WORKING ESTIMATE</span><strong>LIVE EDIT</strong></div><label>COMPARE TO<select value={compareId} onChange={(event) => setCompareId(event.target.value)}>{data.budgetVersions.map((version) => <option value={version.id} key={version.id}>{version.name}</option>)}</select></label><button onClick={() => mutate({ action: "save_budget_version", confirm: true }, "New budget version confirmed")}>CONFIRM AS NEW VERSION</button></div>
+    <div className="work-table budget-editor"><div className="work-head"><span>Category / cost line</span><span>Estimate</span><span>Change</span><span>Committed</span><span>Actual</span><span>Variance</span></div>{lines.map((line) => <BudgetLineRow line={line} baseline={baselineMap.get(line.id)} committed={committedFor(line.id)} actual={actualFor(line.id)} mutate={mutate} key={line.id} />)}<div className="work-total"><span>TOTAL</span><span>{money.format(totals.estimate)}</span><span>{baseline ? signedMoney(totals.estimate - baseline.snapshot.reduce((sum, line) => sum + Number(line.estimate), 0)) : "—"}</span><span>{money.format(totals.committed)}</span><span>{money.format(totals.actual)}</span><span>{money.format(totals.remaining)}</span></div></div>
+    <div className="version-history"><Heading kicker="Budget history" title="Versions & status" />{data.budgetVersions.map((version) => <div key={version.id}><span><strong>{version.name}</strong><small>{new Date(version.created_at).toLocaleDateString()}</small></span><b className={`version-status ${version.status}`}>{version.status}</b><span>{money.format(version.snapshot.reduce((sum, line) => sum + Number(line.estimate), 0))}</span><button onClick={() => mutate({ action: "set_budget_version_status", id: version.id, status: version.status === "archived" ? "confirmed" : "archived" }, "Budget version status updated")}>{version.status === "archived" ? "REACTIVATE" : "ARCHIVE"}</button></div>)}</div>
+  </Page>;
+}
+
+function BudgetLineRow({ line, baseline, committed, actual, mutate }: { line: BudgetLine; baseline?: number; committed: number; actual: number; mutate: Mutate }) {
+  const [draft, setDraft] = useState({ category: line.category, description: line.description, estimate: String(line.estimate) });
+  useEffect(() => setDraft({ category: line.category, description: line.description, estimate: String(line.estimate) }), [line.category, line.description, line.estimate]);
+  const change = baseline === undefined ? null : Number(draft.estimate) - baseline;
+  const commit = () => { if (draft.category !== line.category || draft.description !== line.description || Number(draft.estimate) !== Number(line.estimate)) mutate({ action: "update_budget_line", id: line.id, ...draft, estimate: Number(draft.estimate) }, `${draft.category} updated`); };
+  return <div className={`work-row ${change ? "changed-row" : ""}`}><span><input value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} onBlur={commit} aria-label="Budget category" /><input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} onBlur={commit} aria-label="Budget line description" /></span><span className="money-input"><b>$</b><input type="number" value={draft.estimate} onChange={(event) => setDraft({ ...draft, estimate: event.target.value })} onBlur={commit} aria-label="Estimate" /></span><span className={change && change < 0 ? "negative" : change ? "positive" : "muted"}>{change === null ? "NEW" : change === 0 ? "—" : signedMoney(change)}</span><span>{money.format(committed)}</span><span>{money.format(actual)}</span><span className={Number(draft.estimate) - committed < 0 ? "negative" : ""}>{money.format(Number(draft.estimate) - committed)}</span></div>;
+}
+
+function ReconcileView({ expenses, lines, openComposer, mutate }: { expenses: Expense[]; lines: BudgetLine[]; openComposer: (composer: Composer) => void; mutate: Mutate }) {
+  const lookup = new Map(lines.map((line) => [line.id, line]));
+  const actual = expenses.filter((expense) => expense.status === "matched").reduce((sum, expense) => sum + Number(expense.amount), 0);
+  const working = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
+  const estimate = lines.reduce((sum, line) => sum + Number(line.estimate), 0);
+  return <Page kicker="Finance · Estimate / working / actual" title="Reconciliation" copy="A live cost report with every variance traceable to its underlying charge." actions={<button className="black-button" onClick={() => openComposer("expense")}>＋ EXPENSE</button>}>
+    <div className="dense-metrics"><Metric label="Estimate" value={money.format(estimate)} note="Confirmed production budget" /><Metric label="Working" value={money.format(working)} note="All committed costs" /><Metric label="Actual" value={money.format(actual)} note="Matched and cleared" /><Metric label="Exposure" value={money.format(estimate - working)} note="Estimate less working" /></div>
+    <div className="work-table reconcile-summary"><div className="work-head"><span>Cost line</span><span>Estimate</span><span>Working</span><span>Actual</span><span>Variance</span><span>Progress</span></div>{lines.map((line) => { const lineCosts = expenses.filter((expense) => expense.budget_line_id === line.id); const lineWorking = lineCosts.reduce((sum, item) => sum + Number(item.amount), 0); const lineActual = lineCosts.filter((item) => item.status === "matched").reduce((sum, item) => sum + Number(item.amount), 0); const variance = Number(line.estimate) - lineWorking; return <div className="work-row" key={line.id}><span><strong>{line.category}</strong><small>{line.description}</small></span><span>{money.format(line.estimate)}</span><span>{money.format(lineWorking)}</span><span>{money.format(lineActual)}</span><span className={variance < 0 ? "negative" : "positive"}>{signedMoney(variance)}</span><span className="burn"><i><b style={{ width: `${Math.min(line.estimate ? lineWorking / line.estimate * 100 : 0, 100)}%` }} /></i>{Math.round(line.estimate ? lineWorking / line.estimate * 100 : 0)}%</span></div>; })}</div>
+    <div className="table-heading"><Heading kicker="Transactions" title="Backup & coding" /><span>{expenses.filter((expense) => expense.status === "needs_review").length} NEED REVIEW</span></div><div className="work-table expense-work"><div className="work-head"><span>Vendor / memo</span><span>Cost line</span><span>Date</span><span>Amount</span><span>Status</span></div>{expenses.map((expense) => <div className="work-row" key={expense.id}><span><strong>{expense.vendor}</strong><small>{expense.memo}</small></span><span>{lookup.get(expense.budget_line_id)?.category ?? "Unassigned"}</span><span>{formatDate(expense.spend_date)}</span><span><strong>{money.format(expense.amount)}</strong></span><span><button className={`status-chip ${expense.status}`} onClick={() => mutate({ action: "update_expense_status", id: expense.id, status: expense.status === "matched" ? "needs_review" : "matched" }, "Expense coding updated")}>{titleCase(expense.status)}</button></span></div>)}</div>
+  </Page>;
+}
+
+function BackupView({ files, filePicker, uploadBackup, removeFile, saving }: { files: FileAsset[]; filePicker: RefObject<HTMLInputElement | null>; uploadBackup: (event: ChangeEvent<HTMLInputElement>) => void; removeFile: (file: FileAsset) => void; saving: boolean }) {
+  return <Page kicker="Finance · Backup" title="Receipts & Invoices" copy="Upload backup once and keep it beside the cost report." actions={<button className="black-button" onClick={() => filePicker.current?.click()}>{saving ? "UPLOADING…" : "＋ UPLOAD"}</button>}><input ref={filePicker} type="file" accept="image/*,application/pdf,.csv" hidden onChange={uploadBackup} /><button className="upload-zone compact" onClick={() => filePicker.current?.click()}><strong>DROP RECEIPTS & INVOICES HERE</strong><span>Images, PDFs and statements · up to 20 MB</span></button><div className="work-table file-work"><div className="work-head"><span>File</span><span>Type</span><span>Size</span><span>Status</span><span></span></div>{files.length ? files.map((file) => <div className="work-row" key={file.id}><span><strong>{file.filename}</strong><small>{relativeTime(file.created_at)}</small></span><span>{file.content_type.split("/").pop()?.toUpperCase()}</span><span>{(file.size / 1024).toFixed(0)} KB</span><span><b className="to-code">{file.status}</b></span><span><a href={`/api/files?key=${encodeURIComponent(file.object_key)}`} target="_blank">VIEW ↗</a><button onClick={() => removeFile(file)}>×</button></span></div>) : <Empty text="NO BACKUP YET" note="Upload the first receipt or invoice above." />}</div></Page>;
+}
+
+function CCView({ expenses, lines, ccPicker, importStatement, openComposer, mutate }: { expenses: Expense[]; lines: BudgetLine[]; ccPicker: RefObject<HTMLInputElement | null>; importStatement: (event: ChangeEvent<HTMLInputElement>) => void; openComposer: (composer: Composer) => void; mutate: Mutate }) {
+  const lookup = new Map(lines.map((line) => [line.id, line.category]));
+  return <Page kicker="Finance · Credit card log" title="Card Charges" copy="Import a statement and code charges directly into reconciliation." actions={<><button className="outline-button" onClick={() => ccPicker.current?.click()}>IMPORT CSV ↑</button><button className="black-button" onClick={() => openComposer("expense")}>＋ CHARGE</button></>}><input ref={ccPicker} type="file" accept=".csv,text/csv" hidden onChange={importStatement} /><div className="work-table cc-work"><div className="work-head"><span>Date</span><span>Merchant</span><span>Amount</span><span>Budget category</span><span>Status</span></div>{expenses.map((expense) => <div className="work-row" key={expense.id}><span>{formatDate(expense.spend_date)}</span><span><strong>{expense.vendor}</strong><small>{expense.memo}</small></span><span><strong>{money.format(expense.amount)}</strong></span><span>{lookup.get(expense.budget_line_id) ?? "Unassigned"}</span><span><button className={`status-chip ${expense.status}`} onClick={() => mutate({ action: "update_expense_status", id: expense.id, status: expense.status === "matched" ? "needs_review" : "matched" }, "Charge status updated")}>{titleCase(expense.status)}</button></span></div>)}</div></Page>;
+}
+
+function RecordView({ title, kicker, copy, records, columns, open, remove }: { title: string; kicker: string; copy: string; records: ModuleRecord[]; columns: string[]; open: () => void; remove: (id: string) => void }) {
+  return <Page kicker={kicker} title={title} copy={copy} actions={<button className="black-button" onClick={open}>＋ ROW</button>}><div className={`work-table generic-work cols-${columns.length}`}><div className="work-head">{columns.map((column) => <span key={column}>{titleCase(column)}</span>)}<span /></div>{records.length ? records.map((record) => <div className="work-row" key={record.id}>{columns.map((column, index) => <span key={column}>{index === 0 ? <strong>{record.data[column] || "—"}</strong> : record.data[column] || "—"}</span>)}<span><button onClick={() => remove(record.id)}>×</button></span></div>) : <Empty text="NO ROWS YET" note="Add the first production record above." />}</div></Page>;
+}
+
+function HeadcountView({ crew, schedule, open, mutate }: { crew: ModuleRecord[]; schedule: ModuleRecord[]; open: () => void; mutate: Mutate }) {
+  const general = generalCall(schedule);
+  return <Page kicker="Operations · Synced crew roster" title="Headcount" copy="This roster is the call sheet crew list. Call times recalculate from the schedule." actions={<button className="black-button" onClick={open}>＋ CREW</button>}><div className="sync-banner"><span>↻ LIVE SYNC</span><strong>GENERAL CALL {general}</strong><p>Move the schedule and every automatic crew call moves with it.</p></div><div className="work-table crew-work"><div className="work-head"><span>Name / contact</span><span>Role</span><span>Dietary</span><span>Call rule</span><span>Calculated call</span><span>Location</span><span /></div>{crew.map((record) => { const offset = Number(record.data.callOffset || defaultOffset(record.data.role)); return <div className="work-row" key={record.id}><span><strong>{record.data.name}</strong><small>{record.data.email || record.data.phone}</small></span><span>{record.data.role}</span><span>{record.data.dietary || "—"}</span><span>{offset === 0 ? "General call" : `${offset > 0 ? "+" : ""}${offset} min`}</span><span><strong>{shiftTime(general, offset)}</strong><small>AUTO</small></span><span>{record.data.callLocation || "Basecamp"}</span><span><button onClick={() => mutate({ action: "delete_module_record", id: record.id }, "Crew member removed")}>×</button></span></div>; })}</div></Page>;
+}
+
+function TravelView({ records, picker, open, mutate }: { records: ModuleRecord[]; picker: RefObject<HTMLInputElement | null>; open: () => void; mutate: Mutate }) {
+  const [autoHotel, setAutoHotel] = useState(true); const [autoCar, setAutoCar] = useState(true); const [traveler, setTraveler] = useState(""); const [pasted, setPasted] = useState(""); const [drag, setDrag] = useState(false);
+  async function importFile(file: File) { const bytes = await file.arrayBuffer(); const text = file.type === "application/pdf" ? new TextDecoder("latin1").decode(bytes) : new TextDecoder().decode(bytes); await mutate({ action: "import_travel_reservation", filename: file.name, text, traveler, autoHotel, autoCar }, "Reservation parsed and travel chart updated"); }
+  async function onFile(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (file) await importFile(file); event.target.value = ""; }
+  async function onDrop(event: DragEvent<HTMLButtonElement>) { event.preventDefault(); setDrag(false); const file = event.dataTransfer.files?.[0]; if (file) await importFile(file); }
+  return <Page kicker="Logistics · Synced reservations" title="Travel Charts" copy="Drop a confirmation to extract flight details and create aligned hotel and car holds." actions={<button className="black-button" onClick={open}>＋ MANUAL ROW</button>}><input ref={picker} type="file" accept=".pdf,.eml,.txt,.html,message/rfc822,application/pdf" hidden onChange={onFile} /><div className="travel-import"><button className={drag ? "drop active" : "drop"} onClick={() => picker.current?.click()} onDragOver={(event) => { event.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}><strong>DROP TRAVEL RESERVATION</strong><span>PDF, airline email, itinerary or confirmation text</span></button><div className="travel-options"><label>TRAVELER<input value={traveler} onChange={(event) => setTraveler(event.target.value)} placeholder="Name from headcount" /></label><label className="check"><input type="checkbox" checked={autoHotel} onChange={(event) => setAutoHotel(event.target.checked)} />Suggest hotel from flight dates</label><label className="check"><input type="checkbox" checked={autoCar} onChange={(event) => setAutoCar(event.target.checked)} />Suggest car from arrival</label></div><div className="paste-reservation"><textarea value={pasted} onChange={(event) => setPasted(event.target.value)} placeholder="Or paste a confirmation email here…" /><button disabled={!pasted.trim()} onClick={async () => { await mutate({ action: "import_travel_reservation", filename: "Pasted reservation", text: pasted, traveler, autoHotel, autoCar }, "Reservation parsed and travel chart updated"); setPasted(""); }}>PARSE RESERVATION →</button></div></div><div className="work-table travel-work"><div className="work-head"><span>Traveler</span><span>Type</span><span>Route / property</span><span>Date / time</span><span>Confirmation</span><span>Status</span><span /></div>{records.map((record) => <div className="work-row" key={record.id}><span><strong>{record.data.traveler}</strong><small>{record.data.source || "Manual entry"}</small></span><span>{record.data.type}</span><span><strong>{record.data.detail}</strong><small>{record.data.from && record.data.to ? `${record.data.from} → ${record.data.to}` : ""}</small></span><span>{record.data.timing}</span><span>{record.data.confirmation || "—"}</span><span><b className="to-code">{record.data.status}</b></span><span><button onClick={() => mutate({ action: "delete_module_record", id: record.id }, "Travel item removed")}>×</button></span></div>)}</div></Page>;
+}
+
+function ScheduleView({ records, open, mutate, publish }: { records: ModuleRecord[]; open: () => void; mutate: Mutate; publish: () => void }) {
+  const ordered = [...records].sort((a, b) => (a.data.time || "").localeCompare(b.data.time || ""));
+  return <Page kicker="Operations · Live source" title="Schedule" copy="This timeline drives general call, crew calls, and the generated call sheet." actions={<><button className="outline-button" onClick={publish}>PUSH TO CLIENT →</button><button className="black-button" onClick={open}>＋ ROW</button></>}><div className="sync-banner"><span>↻ CALL SHEET SOURCE</span><strong>{ordered.length} SCHEDULED ITEMS</strong><p>Changes made here flow into the call sheet automatically.</p></div><div className="schedule-sheet"><div className="schedule-head"><span>TIME</span><span>EVENT</span><span>LOCATION</span><span /></div>{ordered.map((record) => <ScheduleRow record={record} mutate={mutate} key={record.id} />)}</div></Page>;
+}
+
+function ScheduleRow({ record, mutate }: { record: ModuleRecord; mutate: Mutate }) {
+  const [data, setData] = useState(record.data); useEffect(() => setData(record.data), [record.data]);
+  const save = () => { if (JSON.stringify(data) !== JSON.stringify(record.data)) mutate({ action: "update_module_record", module: "schedule", id: record.id, data }, "Schedule and call sheet updated"); };
+  return <div className="schedule-row"><input type="time" value={data.time || ""} onChange={(event) => setData({ ...data, time: event.target.value })} onBlur={save} /><input value={data.event || ""} onChange={(event) => setData({ ...data, event: event.target.value })} onBlur={save} /><input value={data.location || ""} onChange={(event) => setData({ ...data, location: event.target.value })} onBlur={save} /><button onClick={() => mutate({ action: "delete_module_record", id: record.id }, "Schedule row removed")}>×</button></div>;
+}
+
+function CallSheet({ project, crew, schedule, travel, locations, publish }: { project: Project; crew: ModuleRecord[]; schedule: ModuleRecord[]; travel: ModuleRecord[]; locations: Location[]; publish: () => void }) {
+  const ordered = [...schedule].sort((a, b) => (a.data.time || "").localeCompare(b.data.time || "")); const general = generalCall(ordered); const approved = locations.find((location) => location.status === "approved");
+  return <Page kicker="Generated · No duplicate entry" title="Call Sheet" copy="Built live from headcount, schedule, travel and approved location data." actions={<><button className="outline-button" onClick={publish}>PUSH TO CLIENT →</button><button className="black-button" onClick={() => window.print()}>EXPORT PDF ↓</button></>}><div className="sync-banner"><span>✓ FULLY SYNCED</span><strong>LAST GENERATED NOW</strong><p>{crew.length} crew · {ordered.length} schedule rows · {travel.length} travel records</p></div><article className="call-sheet"><header><div><span>BILL, INC.</span><h2>{project.name}</h2><p>DAY 01 · {formatDate(project.shoot_start)} · {project.code}</p></div><div><span>GENERAL CALL</span><strong>{general}</strong><small>{approved?.name || "LOCATION TBD"}</small></div></header><section><h3>SCHEDULE</h3>{ordered.map((record) => <div className="call-row" key={record.id}><time>{record.data.time}</time><strong>{record.data.event}</strong><span>{record.data.location}</span></div>)}</section><section><h3>CREW · {crew.length}</h3>{crew.map((record) => { const call = shiftTime(general, Number(record.data.callOffset || defaultOffset(record.data.role))); return <div className="crew-row" key={record.id}><strong>{record.data.name}</strong><span>{record.data.role}</span><span>{call}</span><span>{record.data.callLocation || "Basecamp"}</span></div>; })}</section>{travel.length > 0 && <section><h3>TRAVEL / MOVEMENTS</h3>{travel.filter((record) => ["Flight", "Car", "Transfer"].includes(record.data.type)).map((record) => <div className="call-row" key={record.id}><time>{record.data.departTime || "—"}</time><strong>{record.data.traveler}</strong><span>{record.data.detail}</span></div>)}</section>}<footer><span>BILL, INC.</span><span>LIVE CALL SHEET · {project.code}</span><span>{project.client}</span></footer></article></Page>;
+}
+
+function LocationsView({ project, locations, open, mutate }: { project: Project; locations: Location[]; open: () => void; mutate: Mutate }) {
+  const [preview, setPreview] = useState(false);
+  if (preview) return <LocationPresentation project={project} locations={locations} close={() => setPreview(false)} mutate={mutate} />;
+  return <Page kicker="Scouting · Location library" title="Locations" copy="Build the board once, then present it as a private site or print-ready PDF." actions={<><button className="outline-button" onClick={() => setPreview(true)}>CLIENT PREVIEW ↗</button><button className="black-button" onClick={open}>＋ LOCATION</button></>}><div className="location-toolbar"><span>{locations.length} OPTIONS · {locations.filter((location) => location.status === "approved").length} APPROVED</span><button onClick={() => { setPreview(true); window.setTimeout(() => window.print(), 150); }}>EXPORT BOARD PDF ↓</button></div><div className="location-grid">{locations.map((location) => <article className="location-card" key={location.id}><div className="location-image" style={location.image_url ? { backgroundImage: `linear-gradient(180deg, transparent 58%, rgba(0,0,0,.42)), url(${location.image_url})` } : undefined}><span>{titleCase(location.status)}</span></div><div className="location-body"><p>{location.city}</p><div><h2>{location.name}</h2><strong>{money.format(location.rate)}<small>/ DAY</small></strong></div><p>{location.note}</p><blockquote>{location.client_note}</blockquote><div className="tags">{location.tags.split("|").map((tag) => <span key={tag}>{tag}</span>)}</div><footer><button className={location.status === "approved" ? "active" : ""} onClick={() => mutate({ action: "update_location_status", id: location.id, status: "approved" }, `${location.name} approved`)}>✓ APPROVE</button><button className={location.status === "shortlisted" ? "active" : ""} onClick={() => mutate({ action: "update_location_status", id: location.id, status: "shortlisted" }, `${location.name} shortlisted`)}>＋ SHORTLIST</button></footer></div></article>)}</div></Page>;
+}
+
+function LocationPresentation({ project, locations, close, mutate }: { project: Project; locations: Location[]; close: () => void; mutate: Mutate }) {
+  const [selected, setSelected] = useState(0); const location = locations[selected];
+  if (!location) return <section className="location-presentation"><button onClick={close}>× EXIT</button><Empty text="NO LOCATIONS" note="Add a location before presenting." /></section>;
+  return <section className="location-presentation"><header><div><strong>BILL, INC.</strong><span>{project.name} · LOCATION BOARD</span></div><div><button onClick={() => window.print()}>PDF ↓</button><button onClick={close}>× EXIT</button></div></header><main><div className="presentation-photo" style={{ backgroundImage: `linear-gradient(180deg, transparent 55%, rgba(0,0,0,.6)), url(${location.image_url})` }}><span>{pad(selected + 1)} / {pad(locations.length)}</span><div><p>{location.city}</p><h1>{location.name}</h1></div></div><aside><p>CLIENT NOTES</p><h2>{location.client_note}</h2><dl><div><dt>RATE</dt><dd>{money.format(location.rate)} / DAY</dd></div><div><dt>STATUS</dt><dd>{titleCase(location.status)}</dd></div><div><dt>PRODUCTION NOTE</dt><dd>{location.note}</dd></div></dl><div className="tags">{location.tags.split("|").map((tag) => <span key={tag}>{tag}</span>)}</div><footer><button onClick={() => mutate({ action: "update_location_status", id: location.id, status: "shortlisted" }, `${location.name} shortlisted`)}>SHORTLIST</button><button onClick={() => mutate({ action: "update_location_status", id: location.id, status: "approved" }, `${location.name} approved`)}>APPROVE</button></footer></aside></main><nav>{locations.map((item, index) => <button className={index === selected ? "active" : ""} onClick={() => setSelected(index)} key={item.id}><span>{pad(index + 1)}</span>{item.name}</button>)}</nav></section>;
+}
+
+function ClientPortal({ data, totals, preview, setPreview, publish }: { data: PortalData; totals: { estimate: number; committed: number; actual: number; remaining: number; percent: number }; preview: boolean; setPreview: (value: boolean) => void; publish: Mutate }) {
+  const shares = moduleRows(data, "client_share"); const versions = data.budgetVersions; const [fromId, setFromId] = useState(versions[1]?.id ?? versions[0]?.id ?? ""); const [toId, setToId] = useState(versions[0]?.id ?? ""); const from = versions.find((version) => version.id === fromId); const to = versions.find((version) => version.id === toId); const comparison = compareBudgets(from?.snapshot ?? [], to?.snapshot ?? []);
+  if (preview) return <section className="client-preview"><header><div><strong>BILL, INC.</strong><span /><b>{data.project.name}</b></div><button onClick={() => setPreview(false)}>× EXIT CLIENT MODE</button></header><main><div><p>CLIENT PORTAL · {data.project.client}</p><span>LIVE PRODUCTION HANDOFF</span></div><h1>{data.project.name}</h1><section className="client-budget-compare"><header><div><span>COMPARE ESTIMATES</span><strong>{from?.name || "Earlier"} → {to?.name || "Current"}</strong></div><div><label>FROM<select value={fromId} onChange={(event) => setFromId(event.target.value)}>{versions.map((version) => <option value={version.id} key={version.id}>{version.name}</option>)}</select></label><label>TO<select value={toId} onChange={(event) => setToId(event.target.value)}>{versions.map((version) => <option value={version.id} key={version.id}>{version.name}</option>)}</select></label></div></header><div className="compare-head"><span>Cost line</span><span>Previous</span><span>Current</span><span>Change</span></div>{comparison.map((row) => <div className={row.delta ? "compare-row changed" : "compare-row"} key={row.key}><span><strong>{row.category}</strong><small>{row.description}</small></span><span>{money.format(row.before)}</span><span>{money.format(row.after)}</span><span className={row.delta < 0 ? "negative" : row.delta > 0 ? "positive" : ""}>{row.delta ? signedMoney(row.delta) : "—"}</span></div>)}</section><div className="client-grid">{shares.map((share) => <article key={share.id}><header><span>{share.data.kind}</span><b>↗</b></header><h2>{share.data.label}</h2><p>Shared {share.data.date}</p><footer><span>OPEN DOCUMENT</span><b>→</b></footer></article>)}<article><header><span>SCOUTING</span><b>↗</b></header><h2>LOCATIONS</h2><p>{data.locations.length} options · {data.locations.filter((location) => location.status === "approved").length} approved</p><footer><span>OPEN BOARD</span><b>→</b></footer></article></div><footer><span>BILL, INC.</span><span>CLIENT PORTAL · {data.project.code}</span><span>{data.project.client}</span></footer></main></section>;
+  return <Page kicker="Client · Publishing" title="Client Portal" copy="Publish selected documents and show budget changes—not just the latest total." actions={<button className="black-button" onClick={() => setPreview(true)}>VIEW CLIENT MODE ↗</button>}><div className="client-admin"><section><Heading kicker="Portal access" title={data.project.client} /><div className="portal-credentials"><div><span>ACCESS</span><strong>PRIVATE SITE</strong></div><div><span>PROJECT</span><strong>{data.project.code}</strong></div><div><span>SHARED ITEMS</span><strong>{shares.length}</strong></div></div><div className="push-actions"><button onClick={() => publish({ action: "publish_client_item", kind: "Budget comparison", label: `${from?.name || "Earlier"} → ${to?.name || "Current"}` }, "Budget comparison shared")}>PUSH BUDGET COMPARISON</button><button onClick={() => publish({ action: "publish_client_item", kind: "Cost Report", label: `${data.project.name} · Cost Report` }, "Cost report shared")}>PUSH COST REPORT</button><button onClick={() => publish({ action: "publish_client_item", kind: "Call Sheet", label: `${data.project.name} · Day 01` }, "Call sheet shared")}>PUSH CALL SHEET</button><button onClick={() => publish({ action: "publish_client_item", kind: "Locations", label: `${data.project.name} · Location Board` }, "Location board shared")}>PUSH LOCATIONS</button></div></section><aside><p>CLIENT BUDGET</p><strong>{money.format(totals.estimate)}</strong><div><span>COMMITTED</span><b>{totals.percent}%</b></div><div><span>REMAINING</span><b>{money.format(totals.remaining)}</b></div></aside></div><div className="shared-list"><div className="section-label"><span>PUBLISHED TO CLIENT</span><b>{shares.length} ITEMS</b></div>{shares.map((share) => <div key={share.id}><span>{share.data.kind}</span><strong>{share.data.label}</strong><small>{share.data.date}</small><b>{share.data.status}</b></div>)}</div></Page>;
+}
+
+function ActivityView({ activities }: { activities: Activity[] }) { return <Page kicker="System · Audit trail" title="Activity" copy="Every change across production in one running record."><div className="activity-full"><ActivityList activities={activities} /></div></Page>; }
+function ActivityList({ activities }: { activities: Activity[] }) { return <div className="activity-list">{activities.map((activity) => <div key={activity.id}><span>{activity.kind.slice(0, 2).toUpperCase()}</span><span><strong>{activity.message}</strong><small>{activity.actor}</small></span><time>{relativeTime(activity.created_at)}</time></div>)}</div>; }
+function Heading({ kicker, title }: { kicker: string; title: string }) { return <div className="small-heading"><p>{kicker}</p><h2>{title}</h2></div>; }
+function Metric({ label, value, note }: { label: string; value: string; note: string }) { return <article className="metric"><p>{label}</p><strong>{value}</strong><span>{note}</span></article>; }
+function Empty({ text, note }: { text: string; note: string }) { return <div className="empty"><strong>{text}</strong><span>{note}</span></div>; }
+function Page({ kicker, title, copy, actions, children }: { kicker: string; title: string; copy: string; actions?: ReactNode; children: ReactNode }) { return <section className="page"><header className="page-head"><div><p>{kicker}</p><h1>{title}</h1><span>{copy}</span></div>{actions && <div>{actions}</div>}</header>{children}</section>; }
+
+function ComposerModal({ type, lines, saving, close, submit }: { type: Exclude<Composer, null>; lines: BudgetLine[]; saving: boolean; close: () => void; submit: Mutate }) {
+  function onSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); if (["production", "crew", "schedule", "travel"].includes(type)) { submit({ action: "add_module_record", module: type, data: values }, `${titleCase(type)} record added`); return; } const action = type === "project" ? "create_project" : type === "budget" ? "add_budget_line" : type === "expense" ? "add_expense" : "add_location"; submit({ ...values, action }, `${titleCase(type)} added`); }
+  const title = type === "project" ? "New Production" : type === "budget" ? "New Budget Line" : type === "expense" ? "New Expense" : type === "location" ? "New Location" : type === "crew" ? "Add Crew Member" : type === "travel" ? "Add Travel Record" : type === "schedule" ? "Add Schedule Row" : "Add Production Item";
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><form className="composer" onSubmit={onSubmit}><header><div><p>QUICK ADD</p><h2>{title}</h2></div><button type="button" onClick={close}>×</button></header>
+    {type === "project" && <><Field label="Project name" name="name" /><Field label="Client" name="client" /><div className="field-pair"><Field label="Job code" name="code" /><Field label="Shoot start" name="shootStart" type="date" /></div><Field label="Shoot end" name="shootEnd" type="date" /></>}
+    {type === "budget" && <><Field label="Category" name="category" /><Field label="Description" name="description" /><Field label="Estimate" name="estimate" type="number" /></>}
+    {type === "expense" && <><Field label="Vendor" name="vendor" /><label>Budget line<select name="budgetLineId">{lines.map((line) => <option value={line.id} key={line.id}>{line.category}</option>)}</select></label><div className="field-pair"><Field label="Amount" name="amount" type="number" /><Field label="Spend date" name="spendDate" type="date" /></div><Field label="Memo" name="memo" /></>}
+    {type === "location" && <><Field label="Location name" name="name" /><Field label="City / region" name="city" /><div className="field-pair"><Field label="Day rate" name="rate" type="number" /><Field label="Hero image URL" name="imageUrl" type="url" /></div><Field label="Tags (use | between tags)" name="tags" placeholder="Modern|Daylight|Easy load-in" /><Field label="Production note" name="note" /><Field label="Client-facing note" name="clientNote" /></>}
+    {type === "production" && <><Field label="Section" name="section" /><Field label="Item" name="item" /><div className="field-pair"><Field label="Owner" name="owner" /><Field label="Status" name="status" /></div></>}
+    {type === "crew" && <><Field label="Name" name="name" /><Field label="Role" name="role" /><div className="field-pair"><Field label="Email" name="email" type="email" /><Field label="Phone" name="phone" /></div><div className="field-pair"><Field label="Dietary" name="dietary" required={false} /><Field label="Call offset (minutes)" name="callOffset" type="number" placeholder="-15" /></div><Field label="Call location" name="callLocation" placeholder="Basecamp" /></>}
+    {type === "schedule" && <><Field label="Time" name="time" type="time" /><Field label="Event" name="event" /><Field label="Location" name="location" /></>}
+    {type === "travel" && <><label>Type<select name="type"><option>Flight</option><option>Hotel</option><option>Car</option><option>Transfer</option></select></label><Field label="Traveler" name="traveler" /><Field label="Route / property" name="detail" /><div className="field-pair"><Field label="Timing" name="timing" /><Field label="Confirmation" name="confirmation" required={false} /></div><Field label="Status" name="status" placeholder="Confirmed" /></>}
+    <footer><button type="button" onClick={close}>CANCEL</button><button className="black-button" disabled={saving}>{saving ? "SAVING…" : "SAVE"}</button></footer></form></div>;
+}
+
+function Field({ label, name, type = "text", placeholder, required = true }: { label: string; name: string; type?: string; placeholder?: string; required?: boolean }) { return <label>{label}<input name={name} type={type} placeholder={placeholder} required={required && type !== "url"} /></label>; }
+function parseCsvLine(line: string) { const result: string[] = []; let current = "", quoted = false; for (let index = 0; index < line.length; index++) { const char = line[index]; if (char === '"') { if (quoted && line[index + 1] === '"') { current += '"'; index++; } else quoted = !quoted; } else if (char === "," && !quoted) { result.push(current.trim()); current = ""; } else current += char; } result.push(current.trim()); return result; }
+function normalizeDate(value: string) { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10); }
+function signedMoney(value: number) { return `${value > 0 ? "+" : value < 0 ? "−" : ""}${money.format(Math.abs(value))}`; }
+function compareBudgets(before: BudgetSnapshot[], after: BudgetSnapshot[]) { const beforeMap = new Map(before.map((line) => [line.id, line])); const afterMap = new Map(after.map((line) => [line.id, line])); return [...new Set([...beforeMap.keys(), ...afterMap.keys()])].map((key) => { const a = beforeMap.get(key), b = afterMap.get(key); const previous = Number(a?.estimate ?? 0), current = Number(b?.estimate ?? 0); return { key, category: b?.category || a?.category || "New cost", description: b?.description || a?.description || "", before: previous, after: current, delta: current - previous }; }); }
+function generalCall(schedule: ModuleRecord[]) { return [...schedule].sort((a, b) => (a.data.time || "").localeCompare(b.data.time || ""))[0]?.data.time || "06:00"; }
+function defaultOffset(role: string) { const value = role.toLowerCase(); if (value.includes("producer") || value.includes("ad")) return -30; if (value.includes("camera") || value.includes("grip") || value.includes("electric")) return -15; if (value.includes("talent")) return 45; return 0; }
+function shiftTime(value: string, offset: number) { const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i); if (!match) return value; let hour = Number(match[1]); const minute = Number(match[2]); const suffix = match[3]?.toUpperCase(); if (suffix === "PM" && hour < 12) hour += 12; if (suffix === "AM" && hour === 12) hour = 0; const total = (hour * 60 + minute + offset + 1440) % 1440; const h = Math.floor(total / 60), m = total % 60; return `${pad(h)}:${pad(m)}`; }
