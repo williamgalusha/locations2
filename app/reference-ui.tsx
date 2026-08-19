@@ -79,21 +79,51 @@ function glyphPose(time: number, glyph: (typeof GLYPHS)[number]) {
 }
 
 function CoverGrid() {
-  const [time, setTime] = useState(0);
-  const [scale, setScale] = useState(1);
   const frame = useRef<number | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const glyphNodes = useRef<Array<HTMLSpanElement | null>>([]);
+
   useEffect(() => {
-    const start = Date.now();
-    const tick = () => { setTime(((Date.now() - start) / 1000) % LOOP); frame.current = window.requestAnimationFrame(tick); };
+    let start: number | null = null;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const draw = (time: number) => {
+      for (let index = 0; index < GLYPHS.length; index++) {
+        const node = glyphNodes.current[index];
+        if (!node) continue;
+        const pose = glyphPose(time, GLYPHS[index]);
+        if (!pose) {
+          node.style.visibility = "hidden";
+          continue;
+        }
+        node.style.visibility = "visible";
+        node.style.transform = `translate3d(${pose.x}px, ${pose.y}px, 0) rotate(${pose.rotation}deg) scaleY(${pose.scaleY})`;
+      }
+    };
+    const tick = (timestamp: number) => {
+      start ??= timestamp;
+      draw(((timestamp - start) / 1000) % LOOP);
+      frame.current = window.requestAnimationFrame(tick);
+    };
+    if (reducedMotion) {
+      draw(LOOP - .001);
+      return;
+    }
     frame.current = window.requestAnimationFrame(tick);
     return () => { if (frame.current) window.cancelAnimationFrame(frame.current); };
   }, []);
+
   useEffect(() => {
-    const update = () => { const box = viewport.current?.getBoundingClientRect(); if (box) setScale(Math.min(box.width / 1920, box.height / 1080)); };
+    const update = () => {
+      const box = viewport.current?.getBoundingClientRect();
+      if (!box || !stage.current) return;
+      const coverScale = Math.max(box.width / 1920, box.height / 1080) * 1.002;
+      stage.current.style.transform = `translate3d(-50%, -50%, 0) scale(${coverScale})`;
+    };
     update(); const observer = new ResizeObserver(update); if (viewport.current) observer.observe(viewport.current); return () => observer.disconnect();
   }, []);
-  return <div className="cover-grid-original" ref={viewport}><div className="cover-grid-stage" style={{ transform: `translate(-50%, -50%) scale(${scale})` }}>{GLYPHS.map((glyph, index) => { const pose = glyphPose(time, glyph); return pose ? <span key={index} style={{ transform: `translate(${pose.x}px, ${pose.y}px) rotate(${pose.rotation}deg) scaleY(${pose.scaleY})` }}>{glyph.ch}</span> : null; })}</div></div>;
+
+  return <div className="cover-grid-original" ref={viewport}><div className="cover-grid-stage" ref={stage}>{GLYPHS.map((glyph, index) => <span key={index} ref={(node) => { glyphNodes.current[index] = node; }} aria-hidden="true">{glyph.ch}</span>)}</div></div>;
 }
 
 export function ReferenceLoginScreen({ user, enter, credentialLogin }: { user: User; enter: (role?: PortalRole) => void; credentialLogin: (username: string, password: string, role: PortalRole) => Promise<void> }) {

@@ -27,7 +27,12 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /Reconciliation/);
   assert.match(referenceUi, /cover-grid-original/);
   assert.match(referenceUi, /CLICK TO LOG IN/);
+  assert.match(referenceUi, /requestAnimationFrame\(tick\)/);
+  assert.doesNotMatch(referenceUi, /setTime\(/);
+  assert.match(referenceUi, /Math\.max\(box\.width \/ 1920, box\.height \/ 1080\)/);
+  assert.match(referenceUi, /translate3d\(/);
   assert.match(css, /cover-grid-stage span[^}]*font-weight:\s*700[^}]*line-height:\s*1[^}]*letter-spacing:\s*-\.02em/);
+  assert.match(css, /reference-cover-animation[^}]*height:\s*100%/);
   assert.match(css, /reference-login-panel img[^}]*height:\s*32px/);
   assert.match(referenceUi, /reference-credential-form/);
   assert.match(referenceUi, /LOG IN — CLIENT/);
