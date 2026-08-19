@@ -32,6 +32,10 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /UPLOAD \+ ALLOCATE/);
   assert.match(portal, /Missing backup/);
   assert.match(portal, /BUDGET AUDIT NOTES/);
+  assert.match(portal, /TRAFFIC-AWARE PICKUP PLANNER/);
+  assert.match(portal, /AIRPORT ARRIVAL = 2 HOURS BEFORE FLIGHT/);
+  assert.match(portal, /CHECK DRIVE \+ CALCULATE/);
+  assert.match(portal, /ADD TRANSFER TO CHART/);
   assert.match(referenceUi, /AUDIT BUDGET/);
   assert.match(referenceUi, /budget-audit-result/);
   assert.match(referenceUi, /OPENAI \+ DOCUMENT REVIEW/);
@@ -83,6 +87,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.doesNotMatch(css, /grayscale\(1\)/);
   assert.match(css, /client-theme-dark/);
   assert.match(css, /location-deck-stage/);
+  assert.match(css, /pickup-planner/);
+  assert.match(css, /pickup-result/);
   assert.match(credentialRoute, /PORTAL_SESSION_COOKIE/);
   assert.match(credentialRoute, /role === "client"/);
   assert.match(credentialAuth, /PORTAL_PASSWORD/);
@@ -97,7 +103,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
 });
 
 test("includes durable records, file storage, budget history, and synchronized production actions", async () => {
-  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, auditMigration, route, fileRoute, auditRoute, schema] = await Promise.all([
+  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, auditMigration, route, fileRoute, auditRoute, travelTimeRoute, schema] = await Promise.all([
     readFile(new URL(".openai/hosting.json", root), "utf8"),
     readFile(new URL("drizzle/0000_cute_genesis.sql", root), "utf8"),
     readFile(new URL("drizzle/0001_typical_sabra.sql", root), "utf8"),
@@ -107,6 +113,7 @@ test("includes durable records, file storage, budget history, and synchronized p
     readFile(new URL("app/api/portal/route.ts", root), "utf8"),
     readFile(new URL("app/api/files/route.ts", root), "utf8"),
     readFile(new URL("app/api/audit/route.ts", root), "utf8"),
+    readFile(new URL("app/api/travel-time/route.ts", root), "utf8"),
     readFile(new URL("db/schema.ts", root), "utf8"),
   ]);
 
@@ -137,6 +144,10 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(auditRoute, /input_file/);
   assert.match(auditRoute, /deterministicAudit/);
   assert.match(auditRoute, /LOWER\(category\) = 'backup'/);
+  assert.match(travelTimeRoute, /https:\/\/routes\.googleapis\.com\/directions\/v2:computeRoutes/);
+  assert.match(travelTimeRoute, /TRAFFIC_AWARE_OPTIMAL/);
+  assert.match(travelTimeRoute, /airportLeadMinutes = tripType === "to_airport" \? 120 : 0/);
+  assert.match(travelTimeRoute, /GOOGLE_MAPS_API_KEY/);
   await access(new URL("dist/server/index.js", root));
   await access(new URL("public/og.png", root));
 });
