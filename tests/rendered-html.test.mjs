@@ -50,6 +50,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.doesNotMatch(referenceUi, /PREVIEW (?:WORKSPACE|CLIENT PORTAL|PRODUCTION WORKSPACE)/);
   assert.match(referenceUi, /clientOnly/);
   assert.match(referenceUi, /PRODUCTION ESTIMATE/);
+  assert.match(referenceUi, /＋ ADD VERSION/);
   assert.match(referenceUi, /BILLING DETAILS/);
   assert.match(referenceUi, /CHANGES SINCE PREVIOUS VERSION/);
   assert.match(referenceUi, /ALL LINES/);
