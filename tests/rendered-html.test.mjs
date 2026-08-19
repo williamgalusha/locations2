@@ -40,6 +40,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /reference-login-options[^}]*width:\s*min\(165px/);
   assert.match(css, /reference-login-options > button[^}]*min-height:\s*23px/);
   assert.match(referenceUi, /reference-credential-form/);
+  assert.match(css, /reference-credential-form label[^}]*display:\s*grid[^}]*gap:\s*6px[^}]*border:\s*0/);
+  assert.match(css, /reference-credential-form input[^}]*height:\s*36px[^}]*border:\s*1px solid #111/);
   assert.match(referenceUi, /LOG IN — CLIENT/);
   assert.match(referenceUi, /LOG IN — PRODUCTION/);
   assert.doesNotMatch(referenceUi, />PRODUCTION CONTROL<\/p>/);
