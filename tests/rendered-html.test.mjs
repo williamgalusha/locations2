@@ -73,6 +73,15 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /CHANGES SINCE PREVIOUS VERSION/);
   assert.match(referenceUi, /ALL LINES/);
   assert.match(referenceUi, /CHANGES ONLY/);
+  assert.match(referenceUi, /PUBLISHED BUDGETS/);
+  assert.match(referenceUi, /COMPARE TWO VERSIONS/);
+  assert.match(referenceUi, /VIEW BUDGET/);
+  assert.match(referenceUi, /DOWNLOAD BUDGET PDF/);
+  assert.match(referenceUi, /DOWNLOAD COMPARISON PDF/);
+  assert.match(referenceUi, /getPublishedBudgetVersions/);
+  assert.match(referenceUi, /versionId: clientShareVersion/);
+  assert.match(css, /client-budget-library/);
+  assert.match(css, /client-budget-document/);
   assert.match(referenceUi, /IMPORT FOLDERS/);
   assert.match(referenceUi, /RECENTLY DELETED/);
   assert.match(referenceUi, /PRESENTATION/);
@@ -157,6 +166,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(travelTimeRoute, /TRAFFIC_AWARE_OPTIMAL/);
   assert.match(travelTimeRoute, /airportLeadMinutes = tripType === "to_airport" \? 120 : 0/);
   assert.match(travelTimeRoute, /GOOGLE_MAPS_API_KEY/);
+  assert.match(route, /versionId: textValue\(body\.versionId\)/);
   await access(new URL("dist/server/index.js", root));
   await access(new URL("public/og.png", root));
 });
