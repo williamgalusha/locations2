@@ -99,7 +99,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /user-controls-drawer/);
   assert.match(css, /data-density="compact"/);
   assert.match(css, /data-reduce-motion="true"/);
-  assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.sidebar[^}]*background:\s*#e7e7e4[^}]*color:\s*#111/);
+  assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.sidebar[^}]*background:\s*#e4e7ea[^}]*color:\s*#111/);
   assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.nav-item[^}]*color:\s*#333/);
   assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.brand img[^}]*filter:\s*none/);
   assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.brand img[^}]*mix-blend-mode:\s*multiply/);
@@ -107,6 +107,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.doesNotMatch(css, /orange|coral|#ef5b3e/i);
   assert.doesNotMatch(css, /grayscale\(1\)/);
   assert.match(css, /client-theme-dark/);
+  assert.match(css, /--client-bg:\s*#f3f5f6/);
+  assert.doesNotMatch(css, /#f5f5f4|#ececeb|#d8d8d5|#e7e7e4|#e7e5df|#f4f4f1/);
   assert.match(css, /location-deck-stage/);
   assert.match(css, /pickup-planner/);
   assert.match(css, /pickup-result/);
