@@ -56,6 +56,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /reference-login-options > button[^}]*min-height:\s*23px/);
   assert.match(css, /:root\[data-theme="dark"\] \.budget-document[^}]*background:\s*#171717[^}]*color:\s*#f2f2f0/);
   assert.match(css, /:root\[data-theme="dark"\] \.estimate-header img[^}]*filter:\s*invert\(1\)/);
+  assert.match(css, /:root\[data-theme="dark"\] \.estimate-header img[^}]*mix-blend-mode:\s*screen/);
   assert.match(referenceUi, /reference-credential-form/);
   assert.match(css, /reference-credential-form label[^}]*display:\s*grid[^}]*gap:\s*6px[^}]*border:\s*0/);
   assert.match(css, /reference-credential-form input[^}]*height:\s*36px[^}]*border:\s*1px solid #111/);
