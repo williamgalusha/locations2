@@ -25,6 +25,7 @@ const SCENES = [
 ] as const;
 const CUES = SCENES.reduce<Record<string, number>>((result, scene) => { result[scene.name] = Object.values(result).length ? Object.entries(result).reduce((sum, [name]) => sum + SCENES.find((entry) => entry.name === name)!.duration, 0) : 0; return result; }, {});
 const LOOP = SCENES.reduce((sum, scene) => sum + scene.duration, 0);
+const COVER_PLAYBACK_RATE = 1.3;
 const LETTERS = [
   { ch: "B", fx: 0 }, { ch: "I", fx: 166 }, { ch: "L", fx: 230 }, { ch: "L", fx: 370 },
   { ch: ",", fx: 510 }, { ch: "I", fx: 638 }, { ch: "N", fx: 702 }, { ch: "C", fx: 868 }, { ch: ".", fx: 1034 },
@@ -83,9 +84,12 @@ function CoverGrid() {
   const viewport = useRef<HTMLDivElement>(null);
   const stage = useRef<HTMLDivElement>(null);
   const glyphNodes = useRef<Array<HTMLSpanElement | null>>([]);
+  const glyphVisibility = useRef(new Uint8Array(GLYPHS.length));
+  const glyphTransforms = useRef<string[]>(Array(GLYPHS.length).fill(""));
 
   useEffect(() => {
-    let start: number | null = null;
+    let previous: number | null = null;
+    let elapsed = 0;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const draw = (time: number) => {
       for (let index = 0; index < GLYPHS.length; index++) {
@@ -93,24 +97,43 @@ function CoverGrid() {
         if (!node) continue;
         const pose = glyphPose(time, GLYPHS[index]);
         if (!pose) {
-          node.style.visibility = "hidden";
+          if (glyphVisibility.current[index]) {
+            glyphVisibility.current[index] = 0;
+            glyphTransforms.current[index] = "";
+            node.style.visibility = "hidden";
+          }
           continue;
         }
-        node.style.visibility = "visible";
-        node.style.transform = `translate3d(${pose.x}px, ${pose.y}px, 0) rotate(${pose.rotation}deg) scaleY(${pose.scaleY})`;
+        if (!glyphVisibility.current[index]) {
+          glyphVisibility.current[index] = 1;
+          node.style.visibility = "visible";
+        }
+        const transform = `translate3d(${pose.x}px, ${pose.y}px, 0) rotate(${pose.rotation}deg) scaleY(${pose.scaleY})`;
+        if (glyphTransforms.current[index] !== transform) {
+          glyphTransforms.current[index] = transform;
+          node.style.transform = transform;
+        }
       }
     };
     const tick = (timestamp: number) => {
-      start ??= timestamp;
-      draw(((timestamp - start) / 1000) % LOOP);
+      previous ??= timestamp;
+      const delta = Math.min(timestamp - previous, 50);
+      previous = timestamp;
+      elapsed = (elapsed + delta / 1000 * COVER_PLAYBACK_RATE) % LOOP;
+      draw(elapsed);
       frame.current = window.requestAnimationFrame(tick);
     };
+    const resume = () => { if (!document.hidden) previous = null; };
     if (reducedMotion) {
       draw(LOOP - .001);
       return;
     }
+    document.addEventListener("visibilitychange", resume);
     frame.current = window.requestAnimationFrame(tick);
-    return () => { if (frame.current) window.cancelAnimationFrame(frame.current); };
+    return () => {
+      document.removeEventListener("visibilitychange", resume);
+      if (frame.current) window.cancelAnimationFrame(frame.current);
+    };
   }, []);
 
   useEffect(() => {

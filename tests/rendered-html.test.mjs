@@ -44,11 +44,16 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /aria-label="Click to log in"/);
   assert.doesNotMatch(referenceUi, />CLICK TO LOG IN</);
   assert.match(referenceUi, /requestAnimationFrame\(tick\)/);
+  assert.match(referenceUi, /COVER_PLAYBACK_RATE = 1\.3/);
+  assert.match(referenceUi, /glyphVisibility/);
+  assert.match(referenceUi, /glyphTransforms/);
+  assert.match(referenceUi, /visibilitychange/);
   assert.doesNotMatch(referenceUi, /setTime\(/);
   assert.match(referenceUi, /Math\.max\(box\.width \/ 1920, box\.height \/ 1080\)/);
   assert.match(referenceUi, /\* 1\.08/);
   assert.match(referenceUi, /translate3d\(/);
   assert.match(css, /cover-grid-stage span[^}]*font-weight:\s*700[^}]*line-height:\s*1[^}]*letter-spacing:\s*-\.02em/);
+  assert.match(css, /cover-grid-stage[^}]*contain:\s*layout paint style/);
   assert.match(css, /reference-cover-animation[^}]*height:\s*100%/);
   assert.doesNotMatch(css, /reference-cover-animation > span/);
   assert.match(css, /reference-login-panel img[^}]*height:\s*32px/);
