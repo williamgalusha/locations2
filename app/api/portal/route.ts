@@ -26,6 +26,11 @@ function numberValue(value: unknown) {
   return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
 }
 
+function signedNumberValue(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function actorFromRequest(request: Request) {
   const email = request.headers.get("oai-authenticated-user-email");
   const encodedName = request.headers.get("oai-authenticated-user-full-name");
@@ -263,11 +268,11 @@ export async function POST(request: Request) {
     } else if (action === "add_budget_line") {
       const category = textValue(body.category, "New category");
       const description = textValue(body.description, "Production cost");
-      const rate = numberValue(body.rate ?? body.estimate);
+      const rate = signedNumberValue(body.rate ?? body.estimate);
       const quantity = numberValue(body.quantity) || 1;
       const days = numberValue(body.days) || 1;
       const taxPct = numberValue(body.taxPct);
-      const estimate = numberValue(body.estimate) || rate * quantity * days * (1 + taxPct / 100);
+      const estimate = body.estimate === undefined ? rate * quantity * days * (1 + taxPct / 100) : signedNumberValue(body.estimate);
       const count = await db.prepare("SELECT COUNT(*) AS count FROM budget_lines WHERE project_id = ?").bind(projectId).first<{ count: number }>();
       const sectionCode = textValue(body.sectionCode, String.fromCharCode(65 + Number(count?.count || 0)));
       const itemCode = textValue(body.itemCode, `${sectionCode}1`);
@@ -278,13 +283,58 @@ export async function POST(request: Request) {
       const id = textValue(body.id);
       const category = textValue(body.category, "Production");
       const description = textValue(body.description, "Production cost");
-      const estimate = numberValue(body.estimate);
+      const estimate = signedNumberValue(body.estimate);
       await db.prepare("UPDATE budget_lines SET category = ?, description = ?, estimate = ?, section_code = ?, item_code = ?, item_name = ?, rate = ?, quantity = ?, days = ?, tax_pct = ?, is_na = ?, na_note = ? WHERE id = ? AND project_id = ?")
-        .bind(category, description, estimate, textValue(body.sectionCode), textValue(body.itemCode), textValue(body.itemName, category), numberValue(body.rate), numberValue(body.quantity) || 1, numberValue(body.days) || 1, numberValue(body.taxPct), body.isNa === true ? 1 : numberValue(body.isNa), textValue(body.naNote), id, projectId).run();
+        .bind(category, description, estimate, textValue(body.sectionCode), textValue(body.itemCode), textValue(body.itemName, category), signedNumberValue(body.rate), numberValue(body.quantity) || 1, numberValue(body.days) || 1, numberValue(body.taxPct), body.isNa === true ? 1 : numberValue(body.isNa), textValue(body.naNote), id, projectId).run();
       await logActivity(projectId, "budget", `${category} updated in the working budget`, actor);
     } else if (action === "delete_budget_line") {
       await db.prepare("DELETE FROM budget_lines WHERE id = ? AND project_id = ?").bind(textValue(body.id), projectId).run();
       await logActivity(projectId, "budget", "Budget line removed", actor);
+    } else if (action === "rename_budget_section") {
+      const sectionCode = textValue(body.sectionCode);
+      const category = textValue(body.category, "New Category");
+      await db.prepare("UPDATE budget_lines SET category = ? WHERE project_id = ? AND section_code = ?").bind(category, projectId, sectionCode).run();
+      await logActivity(projectId, "budget", `Section ${sectionCode} renamed ${category}`, actor);
+    } else if (action === "set_budget_section_na") {
+      const sectionCode = textValue(body.sectionCode);
+      const isNa = body.isNa === true ? 1 : 0;
+      await db.prepare("UPDATE budget_lines SET is_na = ?, na_note = ? WHERE project_id = ? AND section_code = ?").bind(isNa, textValue(body.naNote), projectId, sectionCode).run();
+      await logActivity(projectId, "budget", `Section ${sectionCode} ${isNa ? "marked N/A" : "restored"}`, actor);
+    } else if (action === "remove_budget_section") {
+      const sectionCode = textValue(body.sectionCode);
+      await db.prepare("DELETE FROM budget_lines WHERE project_id = ? AND section_code = ?").bind(projectId, sectionCode).run();
+      await logActivity(projectId, "budget", `Section ${sectionCode} removed`, actor);
+    } else if (action === "clear_budget") {
+      await db.prepare("DELETE FROM budget_lines WHERE project_id = ?").bind(projectId).run();
+      await logActivity(projectId, "budget", "Working budget cleared", actor);
+    } else if (action === "reorder_budget_line") {
+      const id = textValue(body.id);
+      const targetId = textValue(body.targetId);
+      const result = await db.prepare("SELECT id FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(projectId).all<{ id: string }>();
+      const order = result.results.map((row) => row.id);
+      const from = order.indexOf(id); const to = order.indexOf(targetId);
+      if (from >= 0 && to >= 0 && from !== to) {
+        order.splice(to, 0, order.splice(from, 1)[0]);
+        const base = Date.now();
+        await db.batch(order.map((lineId, index) => db.prepare("UPDATE budget_lines SET created_at = ? WHERE id = ? AND project_id = ?").bind(new Date(base + index).toISOString(), lineId, projectId)));
+        await logActivity(projectId, "budget", "Budget line order updated", actor);
+      }
+    } else if (action === "replace_budget_snapshot") {
+      const rows = Array.isArray(body.snapshot) ? body.snapshot.slice(0, 250) : [];
+      const statements = [db.prepare("DELETE FROM budget_lines WHERE project_id = ?").bind(projectId)];
+      rows.forEach((item, index) => {
+        if (!item || typeof item !== "object") return;
+        const row = item as Record<string, unknown>;
+        const rate = signedNumberValue(row.rate ?? row.estimate);
+        const quantity = numberValue(row.quantity) || 1;
+        const days = numberValue(row.days) || 1;
+        const taxPct = numberValue(row.tax_pct);
+        const estimate = row.estimate === undefined ? rate * quantity * days * (1 + taxPct / 100) : signedNumberValue(row.estimate);
+        statements.push(db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct, is_na, na_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(textValue(row.id, crypto.randomUUID()), projectId, textValue(row.category, "Production"), textValue(row.description), estimate, 0, new Date(Date.now() + index).toISOString(), textValue(row.section_code), textValue(row.item_code), textValue(row.item_name), rate, quantity, days, taxPct, numberValue(row.is_na), textValue(row.na_note)));
+      });
+      await db.batch(statements);
+      await logActivity(projectId, "budget", "Working budget restored from history", actor);
     } else if (action === "update_project_budget_meta") {
       const allowed: Record<string, string> = { name: "name", client: "client", code: "code", contact: "contact", contactEmail: "contact_email", billingAddress: "billing_address", poNo: "po_no", budgetNotes: "budget_notes", budgetChanges: "budget_changes", markupPct: "markup_pct", insurancePct: "insurance_pct" };
       const fields = Object.entries(allowed).filter(([input]) => body[input] !== undefined);
@@ -296,11 +346,12 @@ export async function POST(request: Request) {
     } else if (action === "save_budget_version") {
       const rows = await db.prepare("SELECT id, category, description, estimate, section_code, item_code, item_name, rate, quantity, days, tax_pct, is_na, na_note FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(projectId).all();
       const count = await db.prepare("SELECT COUNT(*) AS count FROM budget_versions WHERE project_id = ?").bind(projectId).first<{ count: number }>();
-      const name = textValue(body.name, `V${Number(count?.count ?? 0) + 1} · Working estimate`);
+      const overage = body.kind === "overage";
+      const name = textValue(body.name, overage ? `V${Number(count?.count ?? 0) + 1}` : `V${Number(count?.count ?? 0) + 1} · Working estimate`);
       const confirm = body.confirm === true;
       const statements = [];
-      if (confirm) statements.push(db.prepare("UPDATE budget_versions SET status = 'archived' WHERE project_id = ? AND status = 'confirmed'").bind(projectId));
-      statements.push(db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, name, confirm ? "confirmed" : "draft", JSON.stringify(rows.results), now));
+      if (confirm && !overage) statements.push(db.prepare("UPDATE budget_versions SET status = 'archived' WHERE project_id = ? AND status = 'confirmed'").bind(projectId));
+      statements.push(db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, name, overage ? "overage_confirmed" : confirm ? "confirmed" : "draft", JSON.stringify(rows.results), now));
       await db.batch(statements);
       await logActivity(projectId, "budget", `${name} saved${confirm ? " and confirmed" : ""}`, actor);
     } else if (action === "set_budget_version_status") {
@@ -311,6 +362,24 @@ export async function POST(request: Request) {
       statements.push(db.prepare("UPDATE budget_versions SET status = ? WHERE id = ? AND project_id = ?").bind(status, id, projectId));
       await db.batch(statements);
       await logActivity(projectId, "budget", `Budget version marked ${status}`, actor);
+    } else if (action === "restore_budget_version") {
+      const id = textValue(body.id);
+      const version = await db.prepare("SELECT snapshot FROM budget_versions WHERE id = ? AND project_id = ?").bind(id, projectId).first<{ snapshot: string }>();
+      const rows = version ? JSON.parse(String(version.snapshot || "[]")) as Record<string, unknown>[] : [];
+      const statements = [db.prepare("DELETE FROM budget_lines WHERE project_id = ?").bind(projectId)];
+      rows.slice(0, 250).forEach((row, index) => {
+        const rate = signedNumberValue(row.rate ?? row.estimate); const quantity = numberValue(row.quantity) || 1; const days = numberValue(row.days) || 1; const taxPct = numberValue(row.tax_pct); const estimate = row.estimate === undefined ? rate * quantity * days * (1 + taxPct / 100) : signedNumberValue(row.estimate);
+        statements.push(db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct, is_na, na_note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(textValue(row.id, crypto.randomUUID()), projectId, textValue(row.category, "Production"), textValue(row.description), estimate, 0, new Date(Date.now() + index).toISOString(), textValue(row.section_code), textValue(row.item_code), textValue(row.item_name), rate, quantity, days, taxPct, numberValue(row.is_na), textValue(row.na_note)));
+      });
+      const status = textValue(body.status, "confirmed");
+      if (status === "confirmed") statements.push(db.prepare("UPDATE budget_versions SET status = 'archived' WHERE project_id = ? AND status = 'confirmed'").bind(projectId));
+      statements.push(db.prepare("UPDATE budget_versions SET status = ? WHERE id = ? AND project_id = ?").bind(status, id, projectId));
+      await db.batch(statements);
+      await logActivity(projectId, "budget", "Budget version reactivated", actor);
+    } else if (action === "delete_budget_version") {
+      await db.prepare("DELETE FROM budget_versions WHERE id = ? AND project_id = ?").bind(textValue(body.id), projectId).run();
+      await logActivity(projectId, "budget", "Budget version deleted", actor);
     } else if (action === "add_expense") {
       const budgetLineId = textValue(body.budgetLineId);
       const vendor = textValue(body.vendor, "New vendor");
