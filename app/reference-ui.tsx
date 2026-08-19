@@ -193,7 +193,7 @@ function BudgetEditableRow({ line, displayCode, readOnly, mutate, dragStart, dro
   </div>;
 }
 
-export function ReferenceBudgetView({ data, lines, totals, openComposer, mutate }: { data: PortalData; lines: BudgetLine[]; totals: BudgetTotals; expenses: unknown[]; openComposer: () => void; mutate: Mutate }) {
+export function ReferenceBudgetView({ data, lines, totals, openComposer, mutate, auditBudget, auditing }: { data: PortalData; lines: BudgetLine[]; totals: BudgetTotals; expenses: unknown[]; openComposer: () => void; mutate: Mutate; auditBudget: () => void; auditing: boolean }) {
   void totals; void openComposer;
   const [undoStack, setUndoStack] = useState<BudgetSnapshot[][]>([]);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -220,6 +220,9 @@ export function ReferenceBudgetView({ data, lines, totals, openComposer, mutate 
   const archivedOverages = data.budgetVersions.filter((version) => version.status === "overage_archived");
   const mutateBudget: Mutate = async (payload, success) => { setUndoStack((stack) => [...stack, budgetSnapshot(lines)].slice(-50)); await mutate(payload, success); };
   const undo = async () => { const snapshot = undoStack.at(-1); if (!snapshot) return; setUndoStack((stack) => stack.slice(0, -1)); await mutate({ action: "replace_budget_snapshot", snapshot }, "Last budget change undone"); };
+  const latestAudit = data.audits[0];
+  let latestAuditNotes: { severity: string; title: string; detail: string; line_code?: string }[] = [];
+  try { latestAuditNotes = latestAudit ? (Array.isArray(latestAudit.notes) ? latestAudit.notes : JSON.parse(latestAudit.notes)) : []; } catch { latestAuditNotes = []; }
   const nextSectionCode = () => { const used = new Set(sections.map((section) => section.code)); for (let code = 65; code <= 90; code++) { const candidate = String.fromCharCode(code); if (!used.has(candidate)) return candidate; } return `S${Date.now().toString(36).slice(-3).toUpperCase()}`; };
   const addSection = () => { const code = nextSectionCode(); mutateBudget({ action: "add_budget_line", sectionCode: code, itemCode: `${code}1`, category: "New Category", itemName: "", description: "", rate: 0, quantity: 1, days: 1, taxPct: 0 }, `Section ${code} added`); };
   const addLine = (code: string, name: string, count: number) => mutateBudget({ action: "add_budget_line", sectionCode: code, itemCode: `${code}${count + 1}`, category: name, itemName: "", description: "", rate: 0, quantity: 1, days: 1, taxPct: 0 }, `Line added to section ${code}`);
@@ -227,7 +230,8 @@ export function ReferenceBudgetView({ data, lines, totals, openComposer, mutate 
   const drop = (event: DragEvent<HTMLDivElement>, targetId: string) => { event.preventDefault(); const id = draggedLine.current || event.dataTransfer.getData("text/plain"); draggedLine.current = null; if (id && id !== targetId) mutateBudget({ action: "reorder_budget_line", id, targetId }, "Budget line moved"); };
   const reactivate = async (id: string, overage = false) => { await mutate({ action: "restore_budget_version", id, status: overage ? "overage_confirmed" : "confirmed" }, overage ? "Overage reactivated" : "Budget version reactivated"); setViewingVersionId(null); };
   return <section className="reference-budget-page">
-    <header className="budget-original-toolbar budget-noprint"><strong>BUDGET · PRODUCTION ESTIMATE</strong><div><button onClick={undo} disabled={!undoStack.length}>↶ UNDO</button><button onClick={() => mutateBudget({ action: "clear_budget" }, "Budget cleared — use Undo to restore it")}>CLEAR BUDGET</button><button onClick={() => mutate({ action: "publish_client_item", kind: "Budget", label: confirmed?.name || "Production Estimate" }, "Budget pushed to client portal")}>PUSH TO CLIENT PORTAL →</button><button className="solid" onClick={exportPDF}>EXPORT PDF ↓</button></div></header>
+    <header className="budget-original-toolbar budget-noprint"><strong>BUDGET · PRODUCTION ESTIMATE</strong><div><button onClick={undo} disabled={!undoStack.length}>↶ UNDO</button><button onClick={() => mutateBudget({ action: "clear_budget" }, "Budget cleared — use Undo to restore it")}>CLEAR BUDGET</button><button className="budget-audit-trigger" onClick={auditBudget} disabled={auditing}>{auditing ? "AUDITING…" : "AUDIT BUDGET ↗"}</button><button onClick={() => mutate({ action: "publish_client_item", kind: "Budget", label: confirmed?.name || "Production Estimate" }, "Budget pushed to client portal")}>PUSH TO CLIENT PORTAL →</button><button className="solid" onClick={exportPDF}>EXPORT PDF ↓</button></div></header>
+    {latestAudit && <details className="budget-audit-result budget-noprint"><summary><span>{latestAudit.source === "openai" ? "OPENAI + DOCUMENT REVIEW" : "AUTOMATED CROSS-CHECK"}</span><strong>{latestAudit.summary}</strong><b>{latestAuditNotes.length} NOTES ▾</b></summary><div>{latestAuditNotes.slice(0, 8).map((note, index) => <article className={note.severity} key={`${note.title}-${index}`}><b>{note.severity}</b><span><strong>{note.title}</strong><small>{note.detail}</small></span><i>{note.line_code || "—"}</i></article>)}</div></details>}
     <section className="budget-version-manager budget-noprint">
       {readOnly && <div className="budget-view-banner"><strong>VIEWING “{viewingVersion?.name}” — VIEW ONLY</strong><button onClick={() => reactivate(viewingVersion!.id, viewingVersion!.status.startsWith("overage"))}>REACTIVATE TO EDIT</button></div>}
       <div className="budget-version-block"><div className="budget-version-current"><span>CONFIRMED BUDGET</span><strong>{confirmed?.name || "WORKING ESTIMATE"}</strong>{!readOnly && <i>EDITING</i>}<b>{money.format(grand)}</b><button onClick={() => mutate({ action: "save_budget_version", confirm: true }, "Budget saved as a new confirmed version")}>＋ SAVE AS NEW VERSION</button></div>
@@ -358,7 +362,7 @@ export function ReferenceLocationsView({ project, locations, mutate }: { project
       for (const file of Array.from(files)) {
         if (!file.type.startsWith("image/")) continue;
         const form = new FormData(); form.set("file", file); form.set("projectId", project.id); form.set("category", "Location");
-        const response = await fetch("/api/files", { method: "POST", body: form }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || "Image upload failed");
+        const response = await fetch("/api/files", { method: "POST", body: form }); const payload = await response.json() as { error?: string; url: string }; if (!response.ok) throw new Error(payload.error || "Image upload failed");
         const folder = file.webkitRelativePath?.split("/").slice(-2, -1)[0] || file.name.replace(/\.[^.]+$/, ""); grouped.set(folder, [...(grouped.get(folder) || []), payload.url]);
       }
       if (folderImport) await mutate({ action: "import_locations", folders: [...grouped.entries()].map(([name, gallery]) => ({ name, gallery })) }, `${grouped.size} location folders imported`);
