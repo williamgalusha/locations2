@@ -970,10 +970,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .deck-location-body h2 { margin: 0 0 1.2cqw; font-size: 3.75cqw; font-weight: 900; letter-spacing: -.07em; line-height: .9; text-transform: uppercase; }
 .deck-location-body > section > span { display: block; max-width: 29cqw; color: #555; font-size: 1.05cqw; line-height: 1.45; }
 .deck-location-body dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 2cqw 0 1.45cqw; border: 1px solid #ccc; border-width: 1px 0; }
-.deck-location-body dl > div { min-width: 0; padding: .85cqw .4cqw .85cqw 0; border-left: 1px solid #ccc; }
-.deck-location-body dl > div:first-child { border-left: 0; }
-.deck-location-body dt { color: #888; font-size: .5cqw; font-weight: 800; letter-spacing: .09em; }
-.deck-location-body dd { margin: .35cqw 0 0; overflow: hidden; font-size: .82cqw; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.deck-location-body dl > div { min-width: 0; padding: 1cqw .75cqw; border-left: 1px solid #ccc; }
+.deck-location-body dl > div:first-child { padding-left: 0; border-left: 0; }
+.deck-location-body dl > div:last-child { padding-right: 0; }
+.deck-location-body dt { color: #888; font-size: .5cqw; font-weight: 800; letter-spacing: .09em; line-height: 1.3; }
+.deck-location-body dd { margin: .45cqw 0 0; overflow: hidden; font-size: .82cqw; font-weight: 800; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .deck-location-body label { display: flex; justify-content: space-between; align-items: center; color: #777; font-size: .54cqw; font-weight: 800; letter-spacing: .1em; }
 .deck-location-body select { min-width: 10cqw; height: 2.15cqw; border: 1px solid #aaa; background: #fff; color: #111; font-size: .58cqw; font-weight: 800; }
 .deck-location-gallery { min-width: 0; }
