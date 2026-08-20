@@ -944,7 +944,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .deck-cover { padding: 6.55cqw; background: #111; color: #fff; }
 .deck-cover > header { top: 6.55cqw; right: 6.55cqw; left: 6.55cqw; }
 .deck-cover > header img, .deck-divider > header img, .deck-closing > img { filter: invert(1); }
-.deck-cover h1 { position: absolute; top: 50%; right: 6.55cqw; left: 6.55cqw; margin: 0; transform: translateY(-50%); font-size: 7.4cqw; font-weight: 900; letter-spacing: -.085em; line-height: .84; text-align: center; text-transform: uppercase; }
+.deck-cover h1 { position: absolute; top: 50%; left: 6.55cqw; width: 55cqw; margin: 0; transform: translateY(-50%); font-size: 7.4cqw; font-weight: 900; letter-spacing: -.085em; line-height: .84; text-align: left; text-transform: uppercase; }
 .deck-cover h1 span { display: block; }
 .deck-cover > footer { position: absolute; right: 6.55cqw; bottom: 5.5cqw; left: 6.55cqw; display: grid; grid-template-columns: 2fr 1fr 1fr; border-top: 1px solid #666; }
 .deck-cover > footer > div { padding-top: 1.2cqw; }
@@ -958,7 +958,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .deck-index strong { font-size: 1.95cqw; font-weight: 900; letter-spacing: -.045em; text-transform: uppercase; }
 .deck-index > div span { color: #777; font-size: .65cqw; font-weight: 700; line-height: 1.45; text-align: right; text-transform: uppercase; }
 .deck-divider { background: #111; color: #fff; }
-.deck-divider > div { position: absolute; top: 28%; right: 5cqw; left: 5cqw; }
+.deck-divider > div { position: absolute; top: 50%; left: 5cqw; width: 60cqw; transform: translateY(-50%); text-align: left; }
 .deck-divider > div b { display: block; margin-bottom: 1.1cqw; color: #777; font-size: 1.6cqw; }
 .deck-divider h2 { margin: 0; font-size: 7.5cqw; font-weight: 900; letter-spacing: -.08em; line-height: .84; text-transform: uppercase; }
 .deck-divider footer { position: absolute; right: 5cqw; bottom: 4.5cqw; left: 5cqw; padding-top: 1cqw; border-top: 1px solid #555; color: #999; font-size: .62cqw; font-weight: 800; letter-spacing: .12em; }
