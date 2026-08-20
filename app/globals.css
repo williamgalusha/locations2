@@ -944,7 +944,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .deck-cover { padding: 6.55cqw; background: #111; color: #fff; }
 .deck-cover > header { top: 6.55cqw; right: 6.55cqw; left: 6.55cqw; }
 .deck-cover > header img, .deck-divider > header img, .deck-closing > img { filter: invert(1); }
-.deck-cover h1 { position: absolute; top: 27%; right: 6.55cqw; left: 6.55cqw; margin: 0; font-size: 8.1cqw; font-weight: 900; letter-spacing: -.085em; line-height: .82; text-transform: uppercase; }
+.deck-cover h1 { position: absolute; top: 50%; right: 6.55cqw; left: 6.55cqw; margin: 0; transform: translateY(-50%); font-size: 7.4cqw; font-weight: 900; letter-spacing: -.085em; line-height: .84; text-align: center; text-transform: uppercase; }
+.deck-cover h1 span { display: block; }
 .deck-cover > footer { position: absolute; right: 6.55cqw; bottom: 5.5cqw; left: 6.55cqw; display: grid; grid-template-columns: 2fr 1fr 1fr; border-top: 1px solid #666; }
 .deck-cover > footer > div { padding-top: 1.2cqw; }
 .deck-cover small { display: block; margin-bottom: .45cqw; color: #888; font-size: .55cqw; letter-spacing: .12em; }
