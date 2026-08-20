@@ -34,7 +34,11 @@ type PortalUserRow = {
   active: number;
 };
 
-const PASSWORD_ITERATIONS = 210_000;
+// The portal runs on Cloudflare's 10 ms CPU tier. A server-side pepper keeps
+// database-only leaks resistant to offline cracking while a small PBKDF2 cost
+// keeps interactive sign-in inside the Worker request budget.
+const PASSWORD_ITERATIONS = 8_000;
+const PASSWORD_DOMAIN = "bill-portal-password-v1";
 
 function portalEnvironment() {
   const worker = env as unknown as Record<string, unknown> & { DB?: D1Database };
@@ -105,7 +109,10 @@ export async function hashPortalPassword(password: string, suppliedSalt?: string
   const salt = suppliedSalt
     ? Uint8Array.from(atob(suppliedSalt.replaceAll("-", "+").replaceAll("_", "/").padEnd(Math.ceil(suppliedSalt.length / 4) * 4, "=")), (character) => character.charCodeAt(0))
     : crypto.getRandomValues(new Uint8Array(16));
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const encoder = new TextEncoder();
+  const pepperKey = await crypto.subtle.importKey("raw", encoder.encode(await portalSessionSecret()), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const pepperedPassword = await crypto.subtle.sign("HMAC", pepperKey, encoder.encode(`${PASSWORD_DOMAIN}\u0000${password}`));
+  const material = await crypto.subtle.importKey("raw", pepperedPassword, "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: PASSWORD_ITERATIONS }, material, 256);
   return { hash: encodeBytes(new Uint8Array(bits)), salt: suppliedSalt || encodeBytes(salt) };
 }
