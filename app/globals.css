@@ -833,21 +833,64 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .client-empty { padding: 80px 20px; color: var(--client-muted, #888); text-align: center; }
 .original-client-locations { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .original-client-locations > article { border: 1px solid var(--client-line, #aaa); background: var(--client-panel, #fff); }
-.client-location-image { position: relative; aspect-ratio: 4 / 3; background: #ddd center / cover; }
+.client-location-image { position: relative; display: block; width: 100%; aspect-ratio: 4 / 3; padding: 0; overflow: hidden; border: 0; background: #ddd center / cover; color: var(--client-ink, #111); cursor: pointer; }
+.client-location-image::after { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 65%, #0008); content: ""; opacity: 0; transition: opacity .2s ease; }
+.client-location-image:hover::after, .client-location-image:focus-visible::after { opacity: 1; }
 .client-location-image > span { position: absolute; top: 7px; left: 7px; padding: 4px; background: var(--client-panel, #fff); color: var(--client-ink, #111); font-size: 5px; font-weight: 800; }
+.client-location-image > b { position: absolute; right: 9px; bottom: 9px; z-index: 1; color: #fff; font-size: 5px; letter-spacing: .05em; opacity: 0; transform: translateY(3px); transition: opacity .2s ease, transform .2s ease; }
+.client-location-image:hover > b, .client-location-image:focus-visible > b { opacity: 1; transform: translateY(0); }
 .original-client-locations > article > div:last-child { padding: 10px; }
 .original-client-locations p { margin: 0; color: var(--client-quiet, #888); font-size: 5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .original-client-locations h2 { margin: 6px 0 5px; font-size: 14px; }
+.original-client-locations h2 button { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.original-client-locations h2 button:hover, .original-client-locations h2 button:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .original-client-locations article > div > span { display: block; min-height: 34px; color: var(--client-muted, #777); font-size: 6px; line-height: 1.45; }
 .original-client-locations dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 9px 0; border: 1px solid var(--client-soft-line, #ddd); border-width: 1px 0; }
 .original-client-locations dl > div { padding: 6px 4px; border-left: 1px solid var(--client-soft-line, #ddd); }
 .original-client-locations dl > div:first-child { border-left: 0; }
 .original-client-locations dt { color: var(--client-quiet, #888); font-size: 4px; }
 .original-client-locations dd { margin: 4px 0 0; font-size: 6px; }
+.client-location-open { width: 100%; min-height: 25px; margin-bottom: 7px; border: 0; border-bottom: 1px solid var(--client-line); background: transparent; color: var(--client-ink); font-size: 5px; font-weight: 800; text-align: left; cursor: pointer; }
 .original-client-locations footer { display: grid; grid-template-columns: 1fr 1fr 1.25fr; }
 .original-client-locations footer button { min-height: 27px; border: 1px solid var(--client-line, #bbb); border-left: 0; background: var(--client-panel, #fff); color: var(--client-ink, #111); font-size: 4px; font-weight: 800; cursor: pointer; }
 .original-client-locations footer button:first-child { border-left: 1px solid var(--client-line, #bbb); }
 .original-client-locations footer button.active { background: var(--client-ink, #111); color: var(--client-panel, #fff); }
+.client-location-overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: clamp(12px, 3vw, 36px); background: #000b; backdrop-filter: blur(5px); }
+.client-location-detail { width: min(1080px, 100%); max-height: calc(100vh - clamp(24px, 6vw, 72px)); overflow: hidden; border: 1px solid var(--client-line); background: var(--client-panel); color: var(--client-ink); box-shadow: 0 20px 70px #0007; }
+.client-location-detail > header { display: flex; align-items: center; justify-content: space-between; min-height: 50px; padding: 0 14px; border-bottom: 1px solid var(--client-line); }
+.client-location-detail > header > div span, .client-location-detail > header > div strong { display: block; }
+.client-location-detail > header > div span { margin-bottom: 3px; color: var(--client-quiet); font-size: 5px; font-weight: 800; letter-spacing: .1em; }
+.client-location-detail > header > div strong { font-size: 10px; }
+.client-location-detail > header nav { display: flex; gap: 4px; }
+.client-location-detail > header button { min-height: 28px; padding: 0 8px; border: 1px solid var(--client-line); background: transparent; color: var(--client-ink); font-size: 5px; font-weight: 800; cursor: pointer; }
+.client-location-detail > header button:last-child { border-color: var(--client-ink); background: var(--client-ink); color: var(--client-panel); }
+.client-location-detail > main { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(265px, .65fr); max-height: calc(100vh - clamp(75px, 9vw, 123px)); overflow: hidden; }
+.client-location-gallery { min-width: 0; padding: 12px; border-right: 1px solid var(--client-line); overflow-y: auto; }
+.client-location-hero { position: relative; aspect-ratio: 4 / 3; background: var(--client-bg) center / cover no-repeat; }
+.client-location-hero > span { position: absolute; top: 9px; left: 9px; padding: 5px 6px; background: var(--client-panel); color: var(--client-ink); font-size: 5px; font-weight: 800; }
+.client-location-hero > button { position: absolute; top: 50%; width: 34px; height: 34px; padding: 0; border: 1px solid #fff8; background: #111b; color: #fff; font-size: 13px; cursor: pointer; transform: translateY(-50%); }
+.client-location-hero > button.previous { left: 9px; }
+.client-location-hero > button.next { right: 9px; }
+.client-location-thumbnails { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; margin-top: 5px; }
+.client-location-thumbnails button { aspect-ratio: 4 / 3; padding: 0; border: 2px solid transparent; background: var(--client-bg) center / cover; cursor: pointer; opacity: .68; }
+.client-location-thumbnails button.active { border-color: var(--client-ink); opacity: 1; }
+.client-location-detail > main > aside { padding: 22px; overflow-y: auto; }
+.client-location-detail > main > aside > p { margin: 0; color: var(--client-quiet); font-size: 5px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.client-location-detail > main > aside > h2 { margin: 10px 0 8px; font-size: 25px; letter-spacing: -.045em; line-height: .95; }
+.client-location-detail > main > aside > span { display: block; color: var(--client-muted); font-size: 7px; line-height: 1.55; }
+.client-location-detail aside > section { margin-top: 17px; padding-top: 11px; border-top: 1px solid var(--client-soft-line); }
+.client-location-detail aside > section small { color: var(--client-quiet); font-size: 5px; font-weight: 800; letter-spacing: .1em; }
+.client-location-detail aside > section p { margin: 6px 0 0; color: var(--client-ink); font-size: 7px; font-weight: 400; letter-spacing: 0; line-height: 1.5; text-transform: none; }
+.client-location-detail dl { display: grid; grid-template-columns: 1fr 1fr; margin: 18px 0 0; border-top: 1px solid var(--client-line); border-left: 1px solid var(--client-line); }
+.client-location-detail dl > div { min-height: 52px; padding: 9px; border-right: 1px solid var(--client-line); border-bottom: 1px solid var(--client-line); }
+.client-location-detail dt { color: var(--client-quiet); font-size: 4px; font-weight: 800; letter-spacing: .08em; }
+.client-location-detail dd { margin: 6px 0 0; font-size: 7px; font-weight: 800; }
+.client-location-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 13px; }
+.client-location-tags span { padding: 5px 6px; border: 1px solid var(--client-line); color: var(--client-muted); font-size: 5px; font-weight: 800; text-transform: uppercase; }
+.client-location-detail aside > footer { display: grid; grid-template-columns: 1fr 1fr 1.25fr; margin-top: 18px; }
+.client-location-detail aside > footer button { min-height: 31px; padding: 0 4px; border: 1px solid var(--client-line); border-left: 0; background: transparent; color: var(--client-ink); font-size: 4px; font-weight: 800; cursor: pointer; }
+.client-location-detail aside > footer button:first-child { border-left: 1px solid var(--client-line); }
+.client-location-detail aside > footer button.active { background: var(--client-ink); color: var(--client-panel); }
 
 .location-library-shell { display: grid; grid-template-columns: 220px 1fr; margin-top: 12px; border-top: 1px solid var(--line-strong); }
 .location-library-shell > aside { padding: 14px 15px 30px 0; border-right: 1px solid var(--line); }
@@ -1093,6 +1136,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .client-budget-document-head, .client-budget-document-line { grid-template-columns: 38px minmax(0, 1fr) 85px; }
   .client-budget-document > section > header { grid-template-columns: 38px 1fr 85px; }
   .client-budget-document > footer { grid-template-columns: 1fr 55px 85px; }
+  .client-location-overlay { padding: 6px; }
+  .client-location-detail { max-height: calc(100vh - 12px); }
+  .client-location-detail > header nav button:not(:last-child) { display: none; }
+  .client-location-detail > main { grid-template-columns: 1fr; max-height: calc(100vh - 63px); overflow-y: auto; }
+  .client-location-gallery { overflow: visible; border-right: 0; border-bottom: 1px solid var(--client-line); }
+  .client-location-detail > main > aside { overflow: visible; }
+  .client-location-thumbnails { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .location-editor-fields { grid-template-columns: 1fr; }
   .original-location-presentation > header { grid-template-columns: 1fr auto; padding: 0 10px; }
   .location-presentation-meta { display: none; }
@@ -1101,7 +1151,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 @media print {
-  .sidebar, .topbar, .mobile-nav, .page-head, .inline-error, .sync-banner, .location-presentation > header, .location-presentation > nav { display: none !important; }
+  .sidebar, .topbar, .mobile-nav, .page-head, .inline-error, .sync-banner, .location-presentation > header, .location-presentation > nav, .client-location-overlay { display: none !important; }
   :root, :root[data-theme="dark"] { --bg: #fff; --panel: #fff; --ink: #111; --muted: #666; --quiet: #888; --line: #ddd; --line-strong: #111; --inverse: #111; --inverse-ink: #fff; }
   .portal-shell { display: block; }
   .content { padding: 0; }

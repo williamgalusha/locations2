@@ -366,7 +366,43 @@ function ClientBudgets({ versions, shares }: { versions: PortalData["budgetVersi
 
 function ClientLocationBoard({ locations, publish }: { locations: Location[]; publish: Mutate }) {
   const visible = locations.filter((location) => !location.deleted_at && location.client_visible !== 0);
-  return <div className="original-client-locations">{visible.map((location, index) => <article key={location.id}><div className="client-location-image" style={{ backgroundImage: galleryOf(location)[0] ? `url(${galleryOf(location)[0]})` : undefined }}><span>{pad(index + 1)}</span></div><div><p>{location.city} · {location.category || "Location"}</p><h2>{location.name}</h2><span>{location.blurb || location.client_note || location.note}</span><dl><div><dt>DAY RATE</dt><dd>{money.format(location.rate)}</dd></div><div><dt>SQUARE FEET</dt><dd>{location.square_feet || "—"}</dd></div><div><dt>AVAILABILITY</dt><dd>{location.availability || "Pending"}</dd></div></dl><footer><button className={location.status === "approved" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: location.id, status: "approved" }, `${location.name} marked as a top pick`)}>TOP PICK</button><button className={location.status === "shortlisted" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: location.id, status: "shortlisted" }, `${location.name} marked as a secondary pick`)}>SECONDARY</button><button className={location.status === "rejected" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: location.id, status: "rejected" }, `${location.name} marked not interested`)}>NOT INTERESTED</button></footer></div></article>)}</div>;
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [photoIndex, setPhotoIndex] = useState(0);
+  const selectedIndex = visible.findIndex((location) => location.id === selectedId);
+  const selected = selectedIndex >= 0 ? visible[selectedIndex] : null;
+  const selectedGallery = selected ? [...new Set(galleryOf(selected))] : [];
+  const openLocation = (location: Location) => { setSelectedId(location.id); setPhotoIndex(0); };
+  const closeLocation = () => setSelectedId(null);
+  const movePhoto = (direction: number) => setPhotoIndex((current) => selectedGallery.length ? (current + direction + selectedGallery.length) % selectedGallery.length : 0);
+  const moveLocation = (direction: number) => {
+    if (!visible.length || selectedIndex < 0) return;
+    const next = visible[(selectedIndex + direction + visible.length) % visible.length];
+    setSelectedId(next.id);
+    setPhotoIndex(0);
+  };
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") closeLocation();
+      if (event.key === "ArrowLeft") movePhoto(-1);
+      if (event.key === "ArrowRight") movePhoto(1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedId, selectedGallery.length]);
+
+  return <>
+    <div className="original-client-locations">{visible.map((location, index) => { const gallery = [...new Set(galleryOf(location))]; return <article key={location.id}>
+      <button className="client-location-image" style={{ backgroundImage: gallery[0] ? `url(${gallery[0]})` : undefined }} onClick={() => openLocation(location)} aria-label={`View all photos and details for ${location.name}`}><span>{pad(index + 1)}</span><b>VIEW {gallery.length || 0} PHOTO{gallery.length === 1 ? "" : "S"} →</b></button>
+      <div><p>{location.city} · {location.category || "Location"}</p><h2><button onClick={() => openLocation(location)}>{location.name}</button></h2><span>{location.blurb || location.client_note || location.note}</span><dl><div><dt>DAY RATE</dt><dd>{money.format(location.rate)}</dd></div><div><dt>SQUARE FEET</dt><dd>{location.square_feet || "—"}</dd></div><div><dt>AVAILABILITY</dt><dd>{location.availability || "Pending"}</dd></div></dl><button className="client-location-open" onClick={() => openLocation(location)}>VIEW ALL PHOTOS + DETAILS →</button><footer><button className={location.status === "approved" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: location.id, status: "approved" }, `${location.name} marked as a top pick`)}>TOP PICK</button><button className={location.status === "shortlisted" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: location.id, status: "shortlisted" }, `${location.name} marked as a secondary pick`)}>SECONDARY</button><button className={location.status === "rejected" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: location.id, status: "rejected" }, `${location.name} marked not interested`)}>NOT INTERESTED</button></footer></div>
+    </article>; })}</div>
+    {selected && <div className="client-location-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) closeLocation(); }}><section className="client-location-detail" role="dialog" aria-modal="true" aria-label={`${selected.name} location details`}>
+      <header><div><span>{pad(selectedIndex + 1)} / {pad(visible.length)}</span><strong>{selected.name}</strong></div><nav><button onClick={() => moveLocation(-1)}>← PREVIOUS</button><button onClick={() => moveLocation(1)}>NEXT →</button><button onClick={closeLocation}>CLOSE ×</button></nav></header>
+      <main><section className="client-location-gallery"><div className="client-location-hero" style={{ backgroundImage: selectedGallery[photoIndex] ? `url(${selectedGallery[photoIndex]})` : undefined }}><span>{pad(photoIndex + 1)} / {pad(Math.max(selectedGallery.length, 1))}</span>{selectedGallery.length > 1 && <><button className="previous" onClick={() => movePhoto(-1)} aria-label="Previous photo">←</button><button className="next" onClick={() => movePhoto(1)} aria-label="Next photo">→</button></>}</div>{selectedGallery.length > 1 && <div className="client-location-thumbnails">{selectedGallery.map((image, index) => <button className={index === photoIndex ? "active" : ""} style={{ backgroundImage: `url(${image})` }} onClick={() => setPhotoIndex(index)} aria-label={`View photo ${index + 1}`} key={`${selected.id}-${image}`} />)}</div>}</section>
+      <aside><p>{selected.city} · {selected.category || "Location"}</p><h2>{selected.name}</h2><span>{selected.blurb || selected.client_note || selected.note}</span>{selected.client_note && <section><small>CLIENT NOTES</small><p>{selected.client_note}</p></section>}{selected.note && selected.note !== selected.client_note && <section><small>PRODUCTION NOTES</small><p>{selected.note}</p></section>}<dl><div><dt>DAY RATE</dt><dd>{money.format(selected.rate)}</dd></div><div><dt>SQUARE FEET</dt><dd>{selected.square_feet || "—"}</dd></div><div><dt>AVAILABILITY</dt><dd>{selected.availability || "Pending"}</dd></div><div><dt>STATUS</dt><dd>{titleCase(selected.status || "review")}</dd></div></dl>{selected.tags && <div className="client-location-tags">{selected.tags.split("|").filter(Boolean).map((tag) => <span key={tag}>{tag}</span>)}</div>}<footer><button className={selected.status === "approved" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: selected.id, status: "approved" }, `${selected.name} marked as a top pick`)}>TOP PICK</button><button className={selected.status === "shortlisted" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: selected.id, status: "shortlisted" }, `${selected.name} marked as a secondary pick`)}>SECONDARY</button><button className={selected.status === "rejected" ? "active" : ""} onClick={() => publish({ action: "update_location_status", id: selected.id, status: "rejected" }, `${selected.name} marked not interested`)}>NOT INTERESTED</button></footer></aside></main>
+    </section></div>}
+  </>;
 }
 
 function ClientCredentialManager({ data, publish }: { data: PortalData; publish: Mutate }) {
