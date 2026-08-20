@@ -7,7 +7,13 @@ export async function POST(request: Request) {
   const username = typeof body.username === "string" ? body.username.trim() : "";
   const password = typeof body.password === "string" ? body.password : "";
   const role: PortalRole = body.role === "client" ? "client" : "production";
-  const authorization = await authenticatePortalUser(username, password, role).catch(() => null);
+  let authorization;
+  try {
+    authorization = await authenticatePortalUser(username, password, role);
+  } catch (error) {
+    console.error("Credential login initialization failed", error);
+    return Response.json({ error: "Portal login is temporarily unavailable." }, { status: 503 });
+  }
   if (!authorization) return Response.json({ error: "That username or password is not correct for this portal." }, { status: 401 });
   const session = await createPortalSession(authorization);
   return Response.json({ ok: true, user: { name: authorization.displayName, email: authorization.username, credential: true, role, accessLevel: authorization.accessLevel, projectIds: authorization.projectIds } }, {

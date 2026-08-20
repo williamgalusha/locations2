@@ -75,9 +75,22 @@ function equalStrings(left: string, right: string) {
   return difference === 0;
 }
 
+async function portalSessionSecret() {
+  const configured = portalEnvironment().PORTAL_SESSION_SECRET;
+  if (configured) return configured;
+  const db = portalAuthDatabase();
+  await db.prepare("CREATE TABLE IF NOT EXISTS portal_auth_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, created_at TEXT NOT NULL)").run();
+  const existing = await db.prepare("SELECT value FROM portal_auth_settings WHERE key = 'session_secret' LIMIT 1").first<{ value: string }>();
+  if (existing?.value) return existing.value;
+  const generated = encodeBytes(crypto.getRandomValues(new Uint8Array(32)));
+  await db.prepare("INSERT OR IGNORE INTO portal_auth_settings (key, value, created_at) VALUES ('session_secret', ?, ?)").bind(generated, new Date().toISOString()).run();
+  const stored = await db.prepare("SELECT value FROM portal_auth_settings WHERE key = 'session_secret' LIMIT 1").first<{ value: string }>();
+  if (!stored?.value) throw new Error("Portal session security could not be initialized.");
+  return stored.value;
+}
+
 async function signature(payload: string) {
-  const secret = portalEnvironment().PORTAL_SESSION_SECRET;
-  if (!secret) throw new Error("Portal session security is not configured.");
+  const secret = await portalSessionSecret();
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const result = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return encodeBytes(new Uint8Array(result));
@@ -119,6 +132,7 @@ export async function ensurePortalAuthSchema() {
       user_id TEXT NOT NULL, project_id TEXT NOT NULL, permission TEXT NOT NULL,
       created_at TEXT NOT NULL, PRIMARY KEY (user_id, project_id)
     )`),
+    db.prepare("CREATE TABLE IF NOT EXISTS portal_auth_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, created_at TEXT NOT NULL)"),
     db.prepare("CREATE INDEX IF NOT EXISTS portal_user_access_idx ON portal_users (access_level, active)"),
     db.prepare("CREATE INDEX IF NOT EXISTS portal_user_project_idx ON portal_user_projects (project_id, permission)"),
   ]);

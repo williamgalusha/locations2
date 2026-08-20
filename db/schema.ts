@@ -145,3 +145,9 @@ export const portalUserProjects = sqliteTable("portal_user_projects", {
   permission: text("permission").notNull(),
   createdAt: text("created_at").notNull(),
 }, (table) => [primaryKey({ columns: [table.userId, table.projectId] })]);
+
+export const portalAuthSettings = sqliteTable("portal_auth_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  createdAt: text("created_at").notNull(),
+});

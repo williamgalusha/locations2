@@ -43,6 +43,13 @@
       "when": 1787175855803,
       "tag": "0005_nappy_cannonball",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787177718418,
+      "tag": "0006_even_captain_stacy",
+      "breakpoints": true
     }
   ]
 }
