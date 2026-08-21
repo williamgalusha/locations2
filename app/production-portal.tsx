@@ -70,6 +70,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   const [entered, setEntered] = useState(Boolean(initialUser));
   const [accountHome, setAccountHome] = useState(initialUser?.role !== "client");
   const [accountSection, setAccountSection] = useState<AccountSection>("home");
+  const [locationLibraryProjectId, setLocationLibraryProjectId] = useState<string | null>(null);
   const [data, setData] = useState<PortalData | null>(null);
   const [active, setActive] = useState<View>("control");
   const [composer, setComposer] = useState<Composer>(null);
@@ -146,6 +147,11 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     resumeChecked.current = true;
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     setClientPreview(false); setProjectMenu(false); setAccountSection(section); setAccountHome(true);
+  }
+
+  function openLocationLibrary() {
+    setLocationLibraryProjectId(null);
+    openAccountHome("locations");
   }
 
   async function loadProject(projectId?: string) {
@@ -265,8 +271,8 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   async function openProjectLocations(projectId: string) {
     if (!(await loadProject(projectId))) return;
     rememberProject(projectId);
-    markProjectRoute(projectId);
-    setActive("locations"); setClientPreview(false); setAccountSection("home"); setAccountHome(false);
+    setLocationLibraryProjectId(projectId);
+    openAccountHome("locations");
   }
 
   async function logOut() {
@@ -281,7 +287,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   if (!data) return <div className="portal-error"><span>BILL, INC.</span><h1>THE PRODUCTION COULD NOT OPEN.</h1><p>{error}</p><button onClick={() => loadProject()}>TRY AGAIN</button></div>;
 
   if (accountHome) return <>
-    <PortalAccountWorkspace section={accountSection} setSection={setAccountSection} data={data} user={user} openProject={openProjectFromAccount} openProjectLocations={openProjectLocations} createProject={() => setComposer("project")} manageUsers={() => setUserControls(true)} updateProjectStatus={(projectId, status) => mutate({ action: "update_project_status", projectId, status }, status === "Closed" ? "Job closed" : "Job reopened")} theme={theme} toggleTheme={toggleTheme} logOut={logOut} />
+    <PortalAccountWorkspace section={accountSection} setSection={(section) => { if (section === "locations") setLocationLibraryProjectId(null); setAccountSection(section); }} data={data} user={user} openProject={openProjectFromAccount} openProjectLocations={openProjectLocations} locationLibraryProjectId={locationLibraryProjectId} openLocationLibrary={openLocationLibrary} mutate={mutate} createProject={() => setComposer("project")} manageUsers={() => setUserControls(true)} updateProjectStatus={(projectId, status) => mutate({ action: "update_project_status", projectId, status }, status === "Closed" ? "Job closed" : "Job reopened")} theme={theme} toggleTheme={toggleTheme} logOut={logOut} />
     {composer && <ComposerModal type={composer} lines={data.budgetLines} saving={saving} close={() => setComposer(null)} submit={mutate} />}
     {userControls && <UserControlsDrawer user={user} project={data.project} projects={data.projects} theme={theme} compactRows={compactRows} reduceMotion={reduceMotion} close={() => setUserControls(false)} setTheme={setThemeMode} setCompactRows={setCompactMode} setReduceMotion={setMotionMode} logOut={logOut} externalLogout={!localPreview && !user.credential} />}
     {error && <div className="account-home-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
@@ -299,7 +305,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     <aside className="sidebar">
       <button type="button" className="brand" onClick={() => openAccountHome()} title="Portal home"><img src="/bill-inc.png" alt="BILL, INC." /></button>
       <div className="side-project"><span>{data.project.code}</span><strong>{data.project.name}</strong><small>{data.project.client}</small></div>
-      <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => { const backed = new Set(data.files.filter((file) => file.category.toLowerCase() === "backup").map((file) => file.expense_id).filter(Boolean)); const missingBackup = data.expenses.filter((expense) => !backed.has(expense.id)).length; return <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && missingBackup > 0 && <i>{missingBackup}</i>}</button>; })}</div>)}</nav>
+      <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => { const backed = new Set(data.files.filter((file) => file.category.toLowerCase() === "backup").map((file) => file.expense_id).filter(Boolean)); const missingBackup = data.expenses.filter((expense) => !backed.has(expense.id)).length; return <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => item.id === "locations" ? void openProjectLocations(data.project.id) : openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && missingBackup > 0 && <i>{missingBackup}</i>}</button>; })}</div>)}</nav>
       <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserControls(true)} aria-haspopup="dialog" aria-expanded={userControls}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>→</b></button></div>
     </aside>
 
@@ -309,7 +315,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         <label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this production" aria-label="Search this production" /><kbd>⌘ K</kbd></label>
         <div className="top-actions"><span className="sync-state">● SAVED</span><button className="theme-button" onClick={toggleTheme} aria-label={`Use ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "◐" : "◑"}</button><button className="present-button" onClick={() => { openView("client"); setClientPreview(true); }}>CLIENT VIEW ↗</button></div>
       </header>
-      <div className="mobile-nav">{groups.flatMap((group) => group.items).map((item) => <button className={active === item.id ? "active" : ""} onClick={() => openView(item.id)} key={item.id}>{item.label}</button>)}</div>
+      <div className="mobile-nav">{groups.flatMap((group) => group.items).map((item) => <button className={active === item.id ? "active" : ""} onClick={() => item.id === "locations" ? void openProjectLocations(data.project.id) : openView(item.id)} key={item.id}>{item.label}</button>)}</div>
 
       <div className="content">
         {error && <div className="inline-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
@@ -323,7 +329,6 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         {active === "travel" && <TravelDeskView project={data.project} records={moduleRows(data, "travel")} crew={moduleRows(data, "crew")} exports={moduleRows(data, "travel_export")} picker={travelPicker} open={() => setComposer("travel")} mutate={mutate} />}
         {active === "schedule" && <ScheduleView records={moduleRows(data, "schedule")} open={() => setComposer("schedule")} mutate={mutate} publish={() => mutate({ action: "publish_client_item", kind: "Schedule", label: `${data.project.name} · Shooting Schedule` }, "Schedule pushed to client portal")} />}
         {active === "callsheet" && <CallSheet project={data.project} crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} travel={moduleRows(data, "travel")} locations={data.locations} publish={() => mutate({ action: "publish_client_item", kind: "Call Sheet", label: `${data.project.name} · Day 01 Call Sheet` }, "Call sheet pushed to client portal")} />}
-        {active === "locations" && <ReferenceLocationsView project={data.project} projects={data.projects} locations={locations} switchProject={openProjectLocations} openGlobalLibrary={() => openAccountHome("locations")} open={() => setComposer("location")} mutate={mutate} />}
         {active === "client" && <ReferenceClientPortal data={data} totals={totals} preview={clientPreview} setPreview={setClientPreview} publish={mutate} theme={theme} toggleTheme={toggleTheme} onAccountHome={() => openAccountHome()} />}
         {active === "settings" && <ProjectSettings project={data.project} saving={saving} mutate={mutate} />}
         {active === "activity" && <ActivityView activities={data.activities} />}
@@ -345,7 +350,7 @@ function downloadAccountCsv(filename: string, rows: (string | number)[][]) {
 
 const accountLabels: Record<AccountSection, string> = { home: "Portal Home", jobs: "Jobs", locations: "Location Library", templates: "Templates & Guides" };
 
-function PortalAccountWorkspace({ section, setSection, data, user, openProject, openProjectLocations, createProject, manageUsers, updateProjectStatus, theme, toggleTheme, logOut }: { section: AccountSection; setSection: (section: AccountSection) => void; data: PortalData; user: NonNullable<User>; openProject: (projectId: string) => Promise<void>; openProjectLocations: (projectId: string) => Promise<void>; createProject: () => void; manageUsers: () => void; updateProjectStatus: (projectId: string, status: string) => Promise<boolean>; theme: "light" | "dark"; toggleTheme: () => void; logOut: () => Promise<void> }) {
+function PortalAccountWorkspace({ section, setSection, data, user, openProject, openProjectLocations, locationLibraryProjectId, openLocationLibrary, mutate, createProject, manageUsers, updateProjectStatus, theme, toggleTheme, logOut }: { section: AccountSection; setSection: (section: AccountSection) => void; data: PortalData; user: NonNullable<User>; openProject: (projectId: string) => Promise<void>; openProjectLocations: (projectId: string) => Promise<void>; locationLibraryProjectId: string | null; openLocationLibrary: () => void; mutate: Mutate; createProject: () => void; manageUsers: () => void; updateProjectStatus: (projectId: string, status: string) => Promise<boolean>; theme: "light" | "dark"; toggleTheme: () => void; logOut: () => Promise<void> }) {
   const isAdmin = user.accessLevel === "admin";
   const today = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date());
   const navigation: { id: AccountSection; label: string }[] = [{ id: "home", label: "Portal Home" }, { id: "jobs", label: "Jobs" }, { id: "locations", label: "Location Library" }, { id: "templates", label: "Templates & Guides" }];
@@ -354,7 +359,7 @@ function PortalAccountWorkspace({ section, setSection, data, user, openProject, 
     <section className="workspace"><header className="topbar account-topbar"><div className="account-topbar-title"><small>BILL, INC. PORTAL</small><strong>{accountLabels[section]}</strong></div><div className="account-topbar-date"><span>{today}</span><b>{user.email}</b></div><div className="top-actions"><span className="sync-state">● SECURE</span><button className="theme-button" onClick={toggleTheme} aria-label={`Use ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "◐" : "◑"}</button></div></header><div className="account-mobile-nav">{navigation.map((item) => <button className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)} key={item.id}>{item.label}</button>)}</div><div className="content account-portal-content">
       {section === "home" && <PortalAccountHome data={data} user={user} setSection={setSection} createProject={createProject} manageUsers={manageUsers} />}
       {section === "jobs" && <AccountJobs data={data} user={user} openProject={openProject} createProject={createProject} updateProjectStatus={updateProjectStatus} />}
-      {section === "locations" && <GlobalLocationLibrary data={data} openProjectLocations={openProjectLocations} />}
+      {section === "locations" && (locationLibraryProjectId ? <ReferenceLocationsView project={data.project} projects={data.projects} locations={data.locations} switchProject={openProjectLocations} openGlobalLibrary={openLocationLibrary} mutate={mutate} /> : <GlobalLocationLibrary data={data} openProjectLocations={openProjectLocations} />)}
       {section === "templates" && <TemplatesGuidesView user={user} />}
     </div></section>
   </main>;
@@ -395,16 +400,34 @@ function globalLocationImage(location: GlobalLocation) {
 
 function GlobalLocationLibrary({ data, openProjectLocations }: { data: PortalData; openProjectLocations: (projectId: string) => Promise<void> }) {
   const [query, setQuery] = useState("");
+  const [view, setView] = useState<"library" | "projects">("library");
   const [projectId, setProjectId] = useState("all");
+  const [status, setStatus] = useState("all");
   const [category, setCategory] = useState("all");
-  const locations = (data.globalLocations || []).filter((location) => !location.deleted_at);
+  const [city, setCity] = useState("all");
+  const allLocations = data.globalLocations || [];
+  const locations = allLocations.filter((location) => !location.deleted_at);
+  const deleted = allLocations.filter((location) => Boolean(location.deleted_at));
   const categories = [...new Set(locations.map((location) => location.category || "Uncategorized"))].sort();
-  const filtered = locations.filter((location) => projectId === "all" || location.project_id === projectId).filter((location) => category === "all" || (location.category || "Uncategorized") === category).filter((location) => `${location.name} ${location.city} ${location.address || ""} ${location.tags || ""} ${location.project_name} ${location.project_client} ${location.project_code}`.toLowerCase().includes(query.toLowerCase()));
+  const cities = [...new Set(locations.map((location) => location.city).filter(Boolean))].sort();
+  const statuses = [["all", "All"], ["approved", "Top Pick"], ["shortlisted", "Secondary"], ["rejected", "Not Interested"], ["review", "Unrated"]];
+  const filtered = locations
+    .filter((location) => projectId === "all" || location.project_id === projectId)
+    .filter((location) => status === "all" || location.status === status)
+    .filter((location) => category === "all" || (location.category || "Uncategorized") === category)
+    .filter((location) => city === "all" || location.city === city)
+    .filter((location) => `${location.name} ${location.city} ${location.address || ""} ${location.tags || ""} ${location.project_name} ${location.project_client} ${location.project_code}`.toLowerCase().includes(query.toLowerCase()));
+  const selectedProject = data.projects.find((project) => project.id === projectId);
+  const clearFilters = () => { setQuery(""); setProjectId("all"); setStatus("all"); setCategory("all"); setCity("all"); };
+  const hasFilters = Boolean(query || projectId !== "all" || status !== "all" || category !== "all" || city !== "all");
+  const projectRows = data.projects.map((project) => ({ project, count: locations.filter((location) => location.project_id === project.id).length })).filter(({ project }) => `${project.name} ${project.client} ${project.code}`.toLowerCase().includes(query.toLowerCase()));
 
-  return <section className="account-home global-location-library">
-    <section className="global-location-hero"><div><p>COMPANY · GLOBAL LIBRARY</p><h1>LOCATION<br />LIBRARY</h1><span>Search every location across the productions you can access, then open it inside the correct job.</span></div><aside><strong>{locations.length}</strong><span>LOCATIONS ACROSS {data.projects.length} JOB{data.projects.length === 1 ? "" : "S"}</span></aside></section>
-    <section className="global-location-tools"><label>SEARCH<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, city, address, tag, client or job…" /></label><label>JOB<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="all">ALL ACCESSIBLE JOBS</option>{data.projects.map((project) => <option value={project.id} key={project.id}>{project.code} · {project.name}</option>)}</select></label><label>CATEGORY<select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">ALL CATEGORIES</option>{categories.map((value) => <option value={value} key={value}>{value.toUpperCase()}</option>)}</select></label><button onClick={() => { setQuery(""); setProjectId("all"); setCategory("all"); }}>CLEAR FILTERS</button></section>
-    <section className="global-location-results"><header><span>ACCESSIBLE LOCATIONS</span><b>{filtered.length} RESULT{filtered.length === 1 ? "" : "S"}</b></header><div>{filtered.map((location, index) => <article key={`${location.project_id}-${location.id}`}><button className="global-location-photo" onClick={() => void openProjectLocations(location.project_id)} style={{ backgroundImage: globalLocationImage(location) ? `url(${globalLocationImage(location)})` : undefined }}><span>{pad(index + 1)}</span><b>{titleCase(location.status)}</b></button><div><p>{location.city} · {location.category || "Uncategorized"}</p><h2>{location.name}</h2><span>{location.address || location.blurb || location.note || "Location details pending"}</span><dl><div><dt>JOB</dt><dd>{location.project_name}</dd></div><div><dt>CLIENT</dt><dd>{location.project_client}</dd></div><div><dt>JOB NO.</dt><dd>{location.project_code}</dd></div></dl><button onClick={() => void openProjectLocations(location.project_id)}>OPEN JOB LOCATIONS →</button></div></article>)}</div>{filtered.length === 0 && <div className="global-location-empty"><strong>NO LOCATIONS FOUND</strong><span>Adjust the search or open a job to add its first location.</span></div>}</section>
+  return <section className="account-home unified-location-library">
+    <nav className="unified-location-tabs" aria-label="Location library views"><button className={view === "library" ? "active" : ""} onClick={() => { setView("library"); setQuery(""); }}>LIBRARY</button><button className={view === "projects" ? "active" : ""} onClick={() => { setView("projects"); setQuery(""); }}>PROJECTS</button></nav>
+    {view === "projects" ? <section className="location-project-directory"><header><div><p>LOCATION LIBRARY</p><h1>PROJECTS</h1><span>Projects mirror the jobs in the production portal. Open one to work inside its location page.</span></div><b>{data.projects.length} PROJECT{data.projects.length === 1 ? "" : "S"}</b></header><label>SEARCH PROJECTS<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Client, project title or job number…" /></label><div>{projectRows.map(({ project, count }) => <article key={project.id}><div><span>{project.code}</span><h2>{project.name}</h2><p>{project.client} · {count} LOCATION{count === 1 ? "" : "S"}</p></div><button onClick={() => void openProjectLocations(project.id)}>OPEN →</button></article>)}</div>{projectRows.length === 0 && <div className="global-location-empty"><strong>NO PROJECTS MATCH</strong><span>Try a different client name, title or job number.</span></div>}</section> : <>
+      <header className="unified-location-heading"><div><p>LOCATION LIBRARY</p><h1>ALL LOCATIONS</h1><span>{filtered.length} OF {locations.length} LOCATIONS</span></div><div><button disabled={!selectedProject} onClick={() => selectedProject && void openProjectLocations(selectedProject.id)}>＋ ADD LOCATION</button><button disabled={!selectedProject} onClick={() => selectedProject && void openProjectLocations(selectedProject.id)}>↧ IMPORT LOCATIONS</button></div></header>
+      <div className="unified-location-body"><aside><label className="location-search">SEARCH<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search locations" /></label><section><p>STATUS</p>{statuses.map(([value, label]) => <button className={status === value ? "active" : ""} onClick={() => setStatus(value)} key={value}><i /><span>{label}</span><b>{value === "all" ? locations.length : locations.filter((location) => location.status === value).length}</b></button>)}</section><section><p>CATEGORY</p><button className={category === "all" ? "active" : ""} onClick={() => setCategory("all")}><i /><span>All categories</span><b>{locations.length}</b></button>{categories.map((value) => <button className={category === value ? "active" : ""} onClick={() => setCategory(value)} key={value}><i /><span>{value}</span><b>{locations.filter((location) => (location.category || "Uncategorized") === value).length}</b></button>)}</section><section><p>CITY</p><button className={city === "all" ? "active" : ""} onClick={() => setCity("all")}><i /><span>All cities</span><b>{locations.length}</b></button>{cities.map((value) => <button className={city === value ? "active" : ""} onClick={() => setCity(value)} key={value}><i /><span>{value}</span><b>{locations.filter((location) => location.city === value).length}</b></button>)}</section>{hasFilters && <button className="unified-clear-filters" onClick={clearFilters}>CLEAR FILTERS ×</button>}</aside><main><section className="unified-project-context"><div><span>PROJECT CONTEXT</span><label><select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="all">FULL LIBRARY · ALL JOBS</option>{data.projects.map((project) => <option value={project.id} key={project.id}>{project.code} · {project.name} · {project.client}</option>)}</select></label></div>{selectedProject ? <><span>{filtered.length} LOCATION{filtered.length === 1 ? "" : "S"} IN VIEW</span><button onClick={() => void openProjectLocations(selectedProject.id)}>OPEN PROJECT PAGE →</button></> : <><span>SELECT A PROJECT TO ADD OR IMPORT</span><button onClick={() => setView("projects")}>MANAGE PROJECTS →</button></>}</section><div className="unified-location-grid">{filtered.map((location, index) => <article key={`${location.project_id}-${location.id}`}><button className="global-location-photo" onClick={() => void openProjectLocations(location.project_id)} style={{ backgroundImage: globalLocationImage(location) ? `url(${globalLocationImage(location)})` : undefined }}><span>{pad(index + 1)}</span><b>{location.status === "approved" ? "Top Pick" : location.status === "shortlisted" ? "Secondary" : location.status === "rejected" ? "Not Interested" : "Unrated"}</b></button><div><p>{location.city}</p><h2>{location.name}</h2><dl><div><dt>SQ FT</dt><dd>{location.square_feet || "—"}</dd></div><div><dt>/ DAY</dt><dd>{money.format(location.rate)}</dd></div><div><dt>STATUS</dt><dd>{location.availability || "Pending"}</dd></div></dl><small>{location.project_code} · {location.project_name}</small><button onClick={() => void openProjectLocations(location.project_id)}>OPEN LOCATION →</button></div></article>)}</div>{filtered.length === 0 && <div className="global-location-empty"><strong>NO LOCATIONS MATCH</strong><span>Try removing a filter or clearing your search.</span></div>}{deleted.length > 0 && <section className="unified-recently-deleted"><header><strong>RECENTLY DELETED / {deleted.length}</strong><span>OPEN THE PROJECT TO RESTORE OR PERMANENTLY DELETE</span></header>{deleted.map((location) => <div key={`${location.project_id}-${location.id}`}><span><strong>{location.name}</strong><small>{location.project_code} · {location.project_name}</small></span><button onClick={() => void openProjectLocations(location.project_id)}>MANAGE →</button></div>)}</section>}</main></div>
+    </>}
   </section>;
 }
 

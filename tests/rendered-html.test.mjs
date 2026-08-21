@@ -36,6 +36,12 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /WELCOME,/);
   assert.match(portal, /Jobs by year/i);
   assert.match(portal, /Location Library/i);
+  assert.match(portal, /locationLibraryProjectId/);
+  assert.match(portal, /function openLocationLibrary\(\)/);
+  assert.match(portal, /item\.id === "locations" \? void openProjectLocations\(data\.project\.id\)/);
+  assert.doesNotMatch(portal, /active === "locations" &&/);
+  assert.match(portal, /FULL LIBRARY · ALL JOBS/);
+  assert.match(portal, /LOCATION LIBRARY · PROJECT PAGE|ReferenceLocationsView/);
   assert.match(portal, /Templates & Guides/i);
   assert.match(portal, /TemplatesGuidesView/);
   assert.match(portal, /\/api\/library-files/);
@@ -159,6 +165,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.doesNotMatch(referenceUi, /className="client-budget-document"/);
   assert.match(css, /data-print-surface="client-budget"[^}]*\.budget-document/);
   assert.match(referenceUi, /IMPORT FOLDERS/);
+  assert.match(referenceUi, /LOCATION LIBRARY · PROJECT PAGE/);
+  assert.match(referenceUi, /← ALL LOCATIONS/);
   assert.match(referenceUi, /RECENTLY DELETED/);
   assert.match(referenceUi, /PRESENTATION/);
   assert.match(referenceUi, /data-deck-frame/);
@@ -189,6 +197,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /user-controls-drawer/);
   assert.match(css, /account-portal-shell/);
   assert.match(css, /account-destination-grid/);
+  assert.match(css, /unified-location-library/);
+  assert.match(css, /unified-location-body/);
   assert.match(css, /template-upload-panel/);
   assert.match(css, /data-density="compact"/);
   assert.match(css, /data-reduce-motion="true"/);

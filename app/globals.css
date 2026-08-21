@@ -218,6 +218,70 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .global-location-empty strong, .global-location-empty span { display: block; }
 .global-location-empty strong { color: var(--ink); font-size: 10px; }
 .global-location-empty span { margin-top: -80px; font-size: 7px; }
+.unified-location-library { margin: 0 -18px -24px; background: var(--wash); }
+.unified-location-tabs { position: sticky; top: 56px; z-index: 20; display: flex; min-height: 44px; padding: 0 32px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.unified-location-tabs button { position: relative; padding: 0 16px; border: 0; background: transparent; color: var(--muted); font-size: 7px; font-weight: 900; letter-spacing: .08em; cursor: pointer; }
+.unified-location-tabs button.active { color: var(--ink); }
+.unified-location-tabs button.active::after { position: absolute; right: 16px; bottom: 0; left: 16px; height: 2px; background: var(--ink); content: ""; }
+.unified-location-heading { display: flex; min-height: 150px; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 35px 38px 29px; }
+.unified-location-heading p, .location-project-directory header p { margin: 0 0 12px; color: var(--quiet); font-size: 6px; font-weight: 900; letter-spacing: .13em; }
+.unified-location-heading h1, .location-project-directory h1 { margin: 0; font-size: clamp(40px, 5vw, 68px); font-weight: 900; letter-spacing: -.07em; line-height: .82; }
+.unified-location-heading > div:first-child > span { display: block; margin-top: 13px; color: var(--quiet); font-size: 7px; font-weight: 900; letter-spacing: .06em; }
+.unified-location-heading > div:last-child { display: flex; gap: 7px; }
+.unified-location-heading button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--ink); font-size: 6px; font-weight: 900; cursor: pointer; }
+.unified-location-heading button:first-child { background: var(--inverse); color: var(--inverse-ink); }
+.unified-location-heading button:disabled { cursor: not-allowed; opacity: .35; }
+.unified-location-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); border-top: 1px solid var(--line); }
+.unified-location-body > aside { min-height: calc(100vh - 250px); padding: 22px 20px 80px; border-right: 1px solid var(--line); background: var(--panel); }
+.unified-location-body > aside section { margin-top: 20px; }
+.unified-location-body > aside section > p { margin: 0 0 7px; font-size: 6px; font-weight: 900; letter-spacing: .1em; }
+.unified-location-body > aside section > button { display: grid; width: 100%; min-height: 25px; grid-template-columns: 13px 1fr auto; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 7px; text-align: left; cursor: pointer; }
+.unified-location-body > aside section > button i { display: block; width: 12px; height: 12px; border: 1px solid var(--ink); }
+.unified-location-body > aside section:first-of-type > button i { border-radius: 50%; }
+.unified-location-body > aside section > button.active i::after { display: block; width: 6px; height: 6px; margin: 2px; background: var(--ink); content: ""; }
+.unified-location-body > aside section:first-of-type > button.active i::after { border-radius: 50%; }
+.unified-location-body > aside section > button b { color: var(--quiet); font-size: 6px; }
+.unified-clear-filters { margin-top: 27px; padding: 0 0 3px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--quiet); font-size: 6px; font-weight: 900; cursor: pointer; }
+.unified-location-body > main { min-width: 0; padding: 19px 28px 80px; }
+.unified-project-context { display: flex; min-height: 56px; align-items: center; gap: 16px; padding: 9px 12px; border: 1px solid var(--line); background: var(--panel); }
+.unified-project-context > div { display: flex; min-width: 0; flex: 1; align-items: center; gap: 12px; }
+.unified-project-context > div > span, .unified-project-context > span { color: var(--quiet); font-size: 6px; font-weight: 900; letter-spacing: .08em; white-space: nowrap; }
+.unified-project-context label { position: relative; min-width: 220px; max-width: 440px; flex: 1; }
+.unified-project-context select { width: 100%; height: 32px; padding: 0 30px 0 9px; border: 1px solid var(--line-strong); border-radius: 0; background: var(--panel); color: var(--ink); font-size: 7px; font-weight: 800; }
+.unified-project-context > button { min-height: 31px; padding: 0 11px; border: 1px solid var(--line-strong); background: var(--inverse); color: var(--inverse-ink); font-size: 6px; font-weight: 900; cursor: pointer; white-space: nowrap; }
+.unified-location-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 12px; margin-top: 18px; }
+.unified-location-grid article { min-width: 0; border: 1px solid var(--line); background: var(--panel); }
+.unified-location-grid article > div { padding: 13px; }
+.unified-location-grid article p { margin: 0 0 8px; color: var(--quiet); font-size: 6px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.unified-location-grid article h2 { min-height: 33px; margin: 0; font-size: 15px; line-height: 1.05; text-transform: uppercase; }
+.unified-location-grid article dl { display: grid; grid-template-columns: .7fr .8fr 1fr; margin: 13px 0 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
+.unified-location-grid article dl div { min-width: 0; padding: 8px 6px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.unified-location-grid article dt { color: var(--quiet); font-size: 4px; font-weight: 900; }
+.unified-location-grid article dd { margin: 5px 0 0; overflow: hidden; font-size: 6px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.unified-location-grid article small { display: block; margin: 10px 0; overflow: hidden; color: var(--quiet); font-size: 5px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+.unified-location-grid article > div > button { width: 100%; min-height: 31px; border: 1px solid var(--line-strong); background: var(--inverse); color: var(--inverse-ink); font-size: 6px; font-weight: 900; cursor: pointer; }
+.unified-recently-deleted { margin-top: 45px; border-top: 1px solid var(--line); }
+.unified-recently-deleted > header, .unified-recently-deleted > div { display: flex; min-height: 44px; align-items: center; justify-content: space-between; gap: 15px; border-bottom: 1px solid var(--line); }
+.unified-recently-deleted header strong { font-size: 8px; }
+.unified-recently-deleted header span { color: var(--quiet); font-size: 5px; font-weight: 900; }
+.unified-recently-deleted > div > span strong, .unified-recently-deleted > div > span small { display: block; }
+.unified-recently-deleted > div > span strong { font-size: 8px; }
+.unified-recently-deleted > div > span small { margin-top: 4px; color: var(--quiet); font-size: 5px; }
+.unified-recently-deleted button { min-height: 27px; border: 1px solid var(--line); background: var(--panel); font-size: 5px; font-weight: 900; cursor: pointer; }
+.location-project-directory { max-width: 940px; min-height: calc(100vh - 100px); margin: 0 auto; padding: 55px 38px 90px; }
+.location-project-directory > header { display: flex; align-items: flex-end; justify-content: space-between; padding-bottom: 25px; border-bottom: 2px solid var(--line-strong); }
+.location-project-directory > header > div > span { display: block; max-width: 520px; margin-top: 16px; color: var(--muted); font-size: 8px; }
+.location-project-directory > header > b { font-size: 7px; letter-spacing: .08em; }
+.location-project-directory > label { display: grid; gap: 6px; margin: 25px 0 16px; color: var(--quiet); font-size: 5px; font-weight: 900; }
+.location-project-directory > label input { height: 35px; padding: 0 9px; border: 0; border-bottom: 1px solid var(--line-strong); background: transparent; font-size: 8px; }
+.location-project-directory > div:not(.global-location-empty) { display: grid; gap: 8px; }
+.location-project-directory article { display: flex; min-height: 105px; align-items: center; justify-content: space-between; gap: 20px; padding: 15px 17px; border: 1px solid var(--line); background: var(--panel); }
+.location-project-directory article span { color: var(--quiet); font-size: 6px; font-weight: 900; }
+.location-project-directory article h2 { margin: 13px 0 4px; font-size: 18px; text-transform: uppercase; }
+.location-project-directory article p { margin: 0; color: var(--muted); font-size: 6px; font-weight: 800; }
+.location-project-directory article button { min-height: 34px; padding: 0 15px; border: 0; background: var(--inverse); color: var(--inverse-ink); font-size: 6px; font-weight: 900; cursor: pointer; }
+.account-portal-content > .reference-locations-page { min-height: calc(100vh - 80px); }
+.unified-project-location-page .reference-section-head { padding-top: 20px; }
 
 .portal-shell { min-height: 100vh; display: grid; grid-template-columns: 210px minmax(0, 1fr); background: var(--bg); }
 .sidebar { position: sticky; top: 0; z-index: 30; display: flex; flex-direction: column; height: 100vh; padding: 18px 13px 14px; overflow-y: auto; background: #101010; color: #fff; }
@@ -1537,6 +1601,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .global-location-tools > button { grid-column: 1 / -1; min-height: 35px; }
   .global-location-results { margin: 36px 12px 50px; }
   .global-location-results > div:not(.global-location-empty) { grid-template-columns: 1fr; }
+  .unified-location-library { margin: -18px -12px -36px; }
+  .unified-location-tabs { position: static; padding: 0 10px; }
+  .unified-location-heading { min-height: 170px; align-items: flex-start; flex-direction: column; justify-content: flex-end; padding: 28px 14px 20px; }
+  .unified-location-heading > div:last-child { width: 100%; }
+  .unified-location-heading button { flex: 1; }
+  .unified-location-body { grid-template-columns: 1fr; }
+  .unified-location-body > aside { min-height: 0; padding: 15px 14px 20px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .unified-location-body > main { padding: 14px 12px 50px; }
+  .unified-project-context { align-items: stretch; flex-direction: column; }
+  .unified-project-context > div { align-items: stretch; flex-direction: column; }
+  .unified-project-context label { width: 100%; min-width: 0; max-width: none; }
+  .unified-location-grid { grid-template-columns: 1fr; }
+  .location-project-directory { padding: 38px 14px 60px; }
+  .location-project-directory > header { align-items: flex-start; flex-direction: column; gap: 18px; }
+  .location-project-directory article { align-items: flex-start; flex-direction: column; }
+  .location-project-directory article button { width: 100%; }
   .portal-shell { display: block; }
   .sidebar { position: static; height: auto; padding: 13px 14px; overflow: visible; }
   .brand { display: flex; align-items: baseline; justify-content: space-between; padding: 0; }
