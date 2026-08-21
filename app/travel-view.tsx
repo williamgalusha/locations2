@@ -1,7 +1,7 @@
 "use client";
 
-import type { ChangeEvent, DragEvent, FormEvent, ReactNode, RefObject } from "react";
-import { useEffect, useMemo, useState } from "react";
+import type { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, ReactNode, RefObject } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ModuleRecord, Mutate, Project } from "./production-portal";
 
 type PickupPlan = { origin: string; destination: string; tripType: "to_airport" | "from_airport" | "general"; eventDateTime: string; pickupAt: string; arriveBy: string; estimatedDestinationAt: string; airportLeadMinutes: number; bufferMinutes: number; providerConfigured: boolean; driveMinutes: number; staticMinutes: number | null; trafficDelayMinutes: number | null; distanceMiles: number | null; source: "google_traffic" | "estimated" };
@@ -44,7 +44,7 @@ export function TravelDeskView({ project, records, crew, exports, picker, open, 
   const hotelNames = useMemo(() => [...new Set(hotelRows.map((row) => row.hotel).filter(Boolean))].sort(), [hotelRows]);
   const carProviders = useMemo(() => [...new Set(carRows.map((row) => row.provider).filter(Boolean))].sort(), [carRows]);
   const people = useMemo(() => [...new Set([...crew.map((record) => record.data.name), ...records.map((record) => record.data.traveler)].filter(Boolean))].sort((a, b) => a.localeCompare(b)), [crew, records]);
-  const selectedPerson = people.find((name) => name.toLowerCase() === memoPerson.trim().toLowerCase()) || memoPerson.trim();
+  const selectedPerson = people.find((name) => name.toLowerCase() === memoPerson.trim().toLowerCase()) || "";
   const memoFlights = useMemo(() => flights.filter((record) => sameTraveler(record, selectedPerson)).sort(sortTravel), [flights, selectedPerson]);
   const memoHotels = useMemo(() => hotels.filter((record) => sameTraveler(record, selectedPerson)).map((record) => hotelRow(record, crewLookup)), [hotels, selectedPerson, crewLookup]);
   const memoCars = useMemo(() => cars.filter((record) => sameTraveler(record, selectedPerson)).map(carRow).sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`)), [cars, selectedPerson]);
@@ -163,8 +163,81 @@ export function TravelDeskView({ project, records, crew, exports, picker, open, 
     <div className="travel-chart car-chart"><div className="travel-chart-head"><span>Traveler / provider</span><span>Pickup</span><span>Drop-off</span><span>Date / time</span><span>Vehicle</span><span>Confirmation / status</span><span /></div>{visibleCars.length ? visibleCars.map((row) => <CarRecordRow record={cars.find((record) => record.id === row.id)!} row={row} changed={carChanges.fields.get(row.id)} mutate={mutate} key={row.id} />) : <ChartEmpty title="NO CAR BOOKINGS IN THIS VIEW" copy="Use the pickup planner or add a car booking manually." />}</div>
 
     <TravelSectionTitle number="04" kicker="Traveler-facing · Combined itinerary" title="TRAVEL MEMOS" copy="Search any crew member or traveler, review their complete memo, then print or save it as a PDF." />
-    <section className="memo-builder"><header><label>SEARCH TRAVELER<input list="travel-memo-names" value={memoPerson} onChange={(event) => setMemoPerson(event.target.value)} placeholder="Start typing a name…" /><datalist id="travel-memo-names">{people.map((name) => <option value={name} key={name} />)}</datalist></label><div><span>{selectedPerson ? `${memoFlights.length} FLIGHTS · ${memoHotels.length} HOTELS · ${memoCars.length} CARS` : "SELECT A TRAVELER"}</span><button className="outline-button" disabled={!selectedPerson} onClick={publishMemo}>PUSH TO CLIENT →</button><button className="black-button" disabled={!selectedPerson} onClick={exportMemo}>EXPORT MEMO PDF ↓</button></div></header>{selectedPerson ? <MemoPreview project={project} person={selectedPerson} crew={memoCrew} flights={memoFlights} hotels={memoHotels} cars={memoCars} /> : <ChartEmpty title="CHOOSE A TRAVELER" copy="Use the searchable field above to build their memo." />}</section>
+    <section className="memo-builder"><header><label>SEARCH TRAVELER<TravelerSearch people={people} value={memoPerson} onChange={setMemoPerson} /></label><div><span>{selectedPerson ? `${memoFlights.length} FLIGHTS · ${memoHotels.length} HOTELS · ${memoCars.length} CARS` : "SELECT A TRAVELER"}</span><button className="outline-button" disabled={!selectedPerson} onClick={publishMemo}>PUSH TO CLIENT →</button><button className="black-button" disabled={!selectedPerson} onClick={exportMemo}>EXPORT MEMO PDF ↓</button></div></header>{selectedPerson ? <MemoPreview project={project} person={selectedPerson} crew={memoCrew} flights={memoFlights} hotels={memoHotels} cars={memoCars} /> : <ChartEmpty title="CHOOSE A TRAVELER" copy="Use the searchable field above to build their memo." />}</section>
   </section>;
+}
+
+function TravelerSearch({ people, value, onChange }: { people: string[]; value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const root = useRef<HTMLDivElement>(null);
+  const options = useMemo(() => {
+    const query = value.trim().toLocaleLowerCase();
+    return people.filter((name) => !query || name.toLocaleLowerCase().includes(query));
+  }, [people, value]);
+
+  useEffect(() => {
+    function closeOnOutsideClick(event: MouseEvent) {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, []);
+
+  useEffect(() => setActiveIndex(0), [value]);
+
+  function choose(name: string) {
+    onChange(name);
+    setOpen(false);
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex((current) => options.length ? (current + 1) % options.length : 0);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex((current) => options.length ? (current - 1 + options.length) % options.length : 0);
+    } else if (event.key === "Enter" && open && options[activeIndex]) {
+      event.preventDefault();
+      choose(options[activeIndex]);
+    } else if (event.key === "Escape") {
+      setOpen(false);
+    }
+  }
+
+  return <div className="traveler-combobox" ref={root}>
+    <input
+      role="combobox"
+      aria-autocomplete="list"
+      aria-controls="travel-memo-options"
+      aria-expanded={open}
+      aria-activedescendant={open && options[activeIndex] ? `travel-memo-option-${activeIndex}` : undefined}
+      value={value}
+      onFocus={() => setOpen(true)}
+      onClick={() => setOpen(true)}
+      onChange={(event) => { onChange(event.target.value); setOpen(true); }}
+      onKeyDown={onKeyDown}
+      placeholder="Start typing a name…"
+      autoComplete="off"
+    />
+    <button type="button" className="traveler-combobox-toggle" aria-label={open ? "Close traveler list" : "Show all travelers"} onClick={() => setOpen((current) => !current)}>⌄</button>
+    {open && <div className="traveler-combobox-menu" id="travel-memo-options" role="listbox">
+      {options.length ? options.map((name, index) => <button
+        type="button"
+        id={`travel-memo-option-${index}`}
+        role="option"
+        aria-selected={name.toLowerCase() === value.trim().toLowerCase()}
+        className={index === activeIndex ? "active" : ""}
+        onMouseDown={(event) => event.preventDefault()}
+        onMouseEnter={() => setActiveIndex(index)}
+        onClick={() => choose(name)}
+        key={name}
+      >{name}</button>) : <span className="traveler-combobox-empty">NO MATCHING TRAVELERS</span>}
+    </div>}
+  </div>;
 }
 
 function TravelSectionTitle({ number, kicker, title, copy, actions }: { number: string; kicker: string; title: string; copy: string; actions?: ReactNode }) {

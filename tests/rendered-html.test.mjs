@@ -76,7 +76,12 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /Charges covered/);
   assert.match(portal, /Hotel notes/);
   for (const feature of ["TRAVEL DESK", "FLIGHTS", "HOTEL CHARTS", "CAR BOOKINGS", "TRAVEL MEMOS", "EXPORT MEMO PDF", "EXCEL ↓", "PDF ↓"]) assert.match(travelView, new RegExp(feature));
-  assert.match(travelView, /datalist id="travel-memo-names"/);
+  assert.match(travelView, /function TravelerSearch/);
+  assert.match(travelView, /role="combobox"/);
+  assert.match(travelView, /aria-autocomplete="list"/);
+  assert.match(travelView, /Show all travelers/);
+  assert.match(travelView, /name\.toLocaleLowerCase\(\)\.includes\(query\)/);
+  assert.doesNotMatch(travelView, /datalist id="travel-memo-names"/);
   assert.match(travelView, /PUSH TO CLIENT →/);
   assert.match(travelView, /kind: "Travel Memo"/);
   assert.match(travelView, /MASTER HOTEL ROOMING LIST/);
