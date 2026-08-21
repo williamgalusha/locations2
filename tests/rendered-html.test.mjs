@@ -5,12 +5,14 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the BILL, INC. production control room instead of starter preview UI", async () => {
-  const [page, layout, portal, travelView, optionsWorkspace, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute, libraryRoute] = await Promise.all([
+  const [page, layout, portal, travelView, optionsWorkspace, scheduleBuilder, scheduleRoute, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute, libraryRoute] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("app/production-portal.tsx", root), "utf8"),
     readFile(new URL("app/travel-view.tsx", root), "utf8"),
     readFile(new URL("app/options-workspace.tsx", root), "utf8"),
+    readFile(new URL("app/schedule-builder.tsx", root), "utf8"),
+    readFile(new URL("app/api/schedule-builder/route.ts", root), "utf8"),
     readFile(new URL("app/reference-ui.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("package.json", root), "utf8"),
@@ -176,6 +178,17 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /options-workspace/);
   assert.match(css, /options-deck-page/);
   assert.match(css, /budget-comment-composer/);
+  for (const feature of ["SCHEDULE BUILDER", "BASIC QUESTIONS", "FOLLOW-UP QUESTIONS", "NOTES", "REQUEST EDIT", "APPLY TO LIVE SCHEDULE", "BOARD", "LOOK", "TALENT", "SET \/ LOCATION"]) assert.match(scheduleBuilder, new RegExp(feature));
+  assert.match(scheduleBuilder, /\/api\/schedule-builder/);
+  assert.match(scheduleBuilder, /action: "replace_schedule"/);
+  assert.match(scheduleRoute, /https:\/\/api\.openai\.com\/v1\/responses/);
+  assert.match(scheduleRoute, /OPENAI_SCHEDULE_MODEL/);
+  assert.match(scheduleRoute, /json_schema/);
+  assert.match(scheduleRoute, /follow-up questions/i);
+  assert.match(portal, /moduleRows\(data, "schedule_builder"\)/);
+  assert.match(portal, /<ScheduleWorkspace/);
+  assert.match(css, /schedule-builder-layout/);
+  assert.match(css, /schedule-sheet\.detailed/);
   assert.match(referenceUi, /getPublishedBudgetVersions/);
   assert.match(referenceUi, /versionId: clientShareVersion/);
   assert.match(css, /client-budget-library/);

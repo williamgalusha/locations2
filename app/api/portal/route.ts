@@ -4,7 +4,7 @@ import { authorizePortalRequest, canAccessPortalProject, ensurePortalAuthSchema,
 export const runtime = "edge";
 
 const FALLBACK_PROJECT_ID = "prj_harbor";
-const MODULES = new Set(["crew", "travel", "travel_export", "schedule", "production", "casting", "art_buying", "budget_comment", "client_share"]);
+const MODULES = new Set(["crew", "travel", "travel_export", "schedule", "schedule_builder", "production", "casting", "art_buying", "budget_comment", "client_share"]);
 
 type ActionBody = { action?: string; projectId?: unknown; [key: string]: unknown };
 
@@ -659,6 +659,23 @@ export async function POST(request: Request) {
       try { commentData = JSON.parse(existing.data) as Record<string, unknown>; } catch { /* preserve a valid object */ }
       await db.prepare("UPDATE module_records SET data = ?, updated_at = ? WHERE id = ? AND project_id = ?").bind(JSON.stringify({ ...commentData, status: "resolved", resolvedAt: now, resolvedBy: actor }), now, id, projectId).run();
       await logActivity(projectId, "comment", `Budget comment resolved: ${String(commentData.anchorLabel || "Budget")}`, actor);
+    } else if (action === "replace_schedule") {
+      const rows = Array.isArray(body.rows) ? body.rows.slice(0, 200) : [];
+      if (!rows.length) throw new Error("Build at least one schedule item before applying it.");
+      const statements = [db.prepare("DELETE FROM module_records WHERE project_id = ? AND module = 'schedule'").bind(projectId)];
+      rows.forEach((item, index) => {
+        if (!item || typeof item !== "object") return;
+        const row = item as Record<string, unknown>;
+        const event = textValue(row.event).slice(0, 500); if (!event) return;
+        const data = {
+          time: textValue(row.time).slice(0, 5), endTime: textValue(row.endTime).slice(0, 5), runMinutes: textValue(row.runMinutes).slice(0, 6),
+          event, board: textValue(row.board).slice(0, 120), look: textValue(row.look).slice(0, 200), talent: textValue(row.talent).slice(0, 300),
+          location: textValue(row.location).slice(0, 500), notes: textValue(row.notes).slice(0, 1000), type: textValue(row.type, "shoot").slice(0, 30),
+        };
+        statements.push(db.prepare("INSERT INTO module_records VALUES (?, ?, 'schedule', ?, ?, ?)").bind(crypto.randomUUID(), projectId, JSON.stringify(data), new Date(Date.now() + index).toISOString(), now));
+      });
+      await db.batch(statements);
+      await logActivity(projectId, "schedule", `${statements.length - 1} schedule items applied; call sheet regenerated`, actor);
     } else if (action === "add_module_record") {
       const moduleName = textValue(body.module);
       if (!MODULES.has(moduleName)) throw new Error("Unsupported production module.");
