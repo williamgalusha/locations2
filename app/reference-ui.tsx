@@ -281,10 +281,10 @@ export function ReferenceBudgetView({ data, lines, totals, openComposer, mutate,
   </section>;
 }
 
-type ClientPage = "home" | "Budgets" | "Reconciliation" | "Locations" | "Call Sheets" | "Schedules" | "Files";
+type ClientPage = "home" | "Budgets" | "Travel" | "Locations" | "Call Sheets" | "Schedules" | "Files";
 const CLIENT_PAGES: { page: ClientPage; copy: string }[] = [
-  { page: "Budgets", copy: "View estimates, compare versions and download PDFs." },
-  { page: "Reconciliation", copy: "Review approved spend and live production actuals." },
+  { page: "Budgets", copy: "View estimates, reconciliation, comparisons and PDFs." },
+  { page: "Travel", copy: "Open published travel memos, bookings and movements." },
   { page: "Locations", copy: "Explore the shortlist and mark your location picks." },
   { page: "Call Sheets", copy: "Open the latest published crew and timing documents." },
   { page: "Schedules", copy: "See production dates and the current shooting schedule." },
@@ -364,6 +364,42 @@ function ClientBudgets({ versions, shares }: { versions: PortalData["budgetVersi
   </section>;
 }
 
+function ClientReconciliation({ expenses }: { expenses: PortalData["expenses"] }) {
+  const total = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  return <section className="client-reconciliation">
+    <header><div><span>LIVE COST REPORT</span><h2>RECONCILIATION</h2><p>Approved spend and production actuals associated with the current budget.</p></div><div><span>TOTAL WORKING</span><strong>{money.format(total)}</strong></div></header>
+    <div className="client-simple-list"><header><span>VENDOR</span><span>MEMO</span><span>STATUS</span><span>AMOUNT</span></header>{expenses.length ? expenses.map((expense) => <div key={expense.id}><strong>{expense.vendor}</strong><span>{expense.memo}</span><small>{titleCase(expense.status)}</small><b>{money.format(expense.amount)}</b></div>) : <div><strong>No costs published yet.</strong><span>Reconciliation will appear here as production costs are approved.</span><small>—</small><b>—</b></div>}</div>
+  </section>;
+}
+
+function ClientBudgetWorkspace({ versions, shares, expenses }: { versions: PortalData["budgetVersions"]; shares: PortalData["records"]; expenses: PortalData["expenses"] }) {
+  const [section, setSection] = useState<"budgets" | "reconciliation">("budgets");
+  return <><nav className="client-budget-subnav" aria-label="Budget sections"><button className={section === "budgets" ? "active" : ""} onClick={() => setSection("budgets")}>BUDGETS</button><button className={section === "reconciliation" ? "active" : ""} onClick={() => setSection("reconciliation")}>RECONCILIATION</button></nav>{section === "budgets" ? <ClientBudgets versions={versions} shares={shares} /> : <ClientReconciliation expenses={expenses} />}</>;
+}
+
+function printClientTravel() {
+  document.body.dataset.printSurface = "client-travel";
+  window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+    window.print();
+    window.setTimeout(() => { delete document.body.dataset.printSurface; }, 250);
+  }));
+}
+
+function ClientTravel({ project, records, shares }: { project: Project; records: PortalData["records"]; shares: PortalData["records"] }) {
+  const published = shares.filter((share) => share.data.kind?.toLowerCase() === "travel memo");
+  const [selectedId, setSelectedId] = useState("");
+  const selected = published.find((share) => share.id === selectedId);
+  const traveler = selected?.data.traveler || selected?.data.label?.replace(/\s*·\s*Travel Memo$/i, "") || "";
+  const itinerary = records.filter((record) => record.module === "travel" && (record.data.traveler || "").toLowerCase().split(/\s*,\s*/).includes(traveler.toLowerCase()));
+  const groups = [
+    { title: "FLIGHTS", items: itinerary.filter((record) => record.data.type === "Flight") },
+    { title: "HOTELS", items: itinerary.filter((record) => record.data.type === "Hotel") },
+    { title: "CARS / TRANSFERS", items: itinerary.filter((record) => ["Car", "Transfer"].includes(record.data.type)) },
+  ];
+  if (selected) return <section className="client-travel-memo"><div className="client-travel-actions"><button onClick={() => setSelectedId("")}>← ALL TRAVEL MEMOS</button><button onClick={printClientTravel}>DOWNLOAD MEMO PDF ↓</button></div><article><header><div><span>TRAVEL MEMO</span><h2>{traveler}</h2><p>{project.name} · {project.code}</p></div><strong>{selected.data.date || "SHARED"}</strong></header>{groups.map((group) => <section key={group.title}><h3>{group.title}</h3>{group.items.length ? group.items.map((record) => <div key={record.id}><span><strong>{record.data.detail || `${record.data.from || "—"} → ${record.data.to || "—"}`}</strong><small>{record.data.provider || record.data.type}</small></span><span><strong>{record.data.timing || record.data.departDate || "Date pending"}</strong><small>{record.data.departTime || record.data.arriveTime || "Time pending"}</small></span><span><small>CONFIRMATION</small><b>{record.data.confirmation || "—"}</b></span></div>) : <p>No {group.title.toLowerCase()} on this memo.</p>}</section>)}<footer><span>BILL, INC.</span><span>PLEASE VERIFY ALL TIMES BEFORE TRAVEL</span><span>{project.client}</span></footer></article></section>;
+  return <section className="client-travel-library"><header><div><span>PUBLISHED TRAVEL</span><h2>{published.length ? `${published.length} TRAVEL MEMO${published.length === 1 ? "" : "S"}` : "NO TRAVEL MEMOS PUBLISHED"}</h2><p>Open the individual itineraries shared by the production team.</p></div></header>{published.length ? <div>{published.map((share, index) => <article key={share.id}><span>{pad(index + 1)}</span><div><strong>{share.data.label}</strong><small>Published travel memo · {share.data.date}</small></div><button onClick={() => setSelectedId(share.id)}>OPEN MEMO →</button></article>)}</div> : <div className="client-empty"><strong>NO TRAVEL MEMO HAS BEEN SHARED YET</strong><span>Your production team can publish a traveler’s memo from the Travel Desk.</span></div>}</section>;
+}
+
 function ClientLocationBoard({ locations, publish }: { locations: Location[]; publish: Mutate }) {
   const visible = locations.filter((location) => !location.deleted_at && location.client_visible !== 0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -426,7 +462,7 @@ export function ReferenceClientPortal({ data, totals, preview, setPreview, publi
     <header><button className="client-wordmark" onClick={() => setPage("home")}><img src="/bill-inc.png" alt="BILL, INC." /></button><div><span>{data.project.name}</span><i /><strong>CLIENT PORTAL</strong></div><div className="client-header-actions"><button onClick={() => setClientTheme((current) => current === "light" ? "dark" : "light")}>{clientTheme === "light" ? "DARK MODE" : "LIGHT MODE"}</button><button onClick={() => setPreview(false)}>{clientOnly ? "LOG OUT →" : "CLOSE ×"}</button></div></header>
     <main>
       <div className="client-date"><span>{new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</span>{page !== "home" && <button onClick={() => setPage("home")}>← PROJECT HOME</button>}</div>
-      {page === "home" ? <><h1>{data.project.name}</h1><p className="client-welcome">Everything shared for {data.project.client}, together in one place.</p><div className="original-client-cards">{CLIENT_PAGES.map((card, index) => <button onClick={() => setPage(card.page)} key={card.page}><span>{pad(index + 1)}</span><h2>{card.page}</h2><p>{card.copy}</p><footer>OPEN <b>→</b></footer></button>)}</div></> : <><h1 className="client-page-title">{page}</h1>{page === "Budgets" && <ClientBudgets versions={data.budgetVersions} shares={shares} />}{page === "Locations" && <><div className="client-location-pdf-actions"><div><span>LOCATION PRESENTATION</span><strong>View the complete, print-ready location deck.</strong></div><button onClick={() => setLocationPdfView(true)}>OPEN PDF VIEW ↗</button></div><ClientLocationBoard locations={data.locations} publish={publish} /></>}{page === "Reconciliation" && <div className="client-simple-list"><header><span>VENDOR</span><span>MEMO</span><span>STATUS</span><span>AMOUNT</span></header>{data.expenses.map((expense) => <div key={expense.id}><strong>{expense.vendor}</strong><span>{expense.memo}</span><small>{titleCase(expense.status)}</small><b>{money.format(expense.amount)}</b></div>)}</div>}{(["Call Sheets", "Schedules", "Files"] as ClientPage[]).includes(page) && <div className="client-simple-list">{shares.filter((share) => share.data.kind === page.replace(/s$/, "") || share.data.kind === page).map((share) => <div key={share.id}><strong>{share.data.label}</strong><span>{share.data.date}</span><small>{share.data.status}</small><b>OPEN →</b></div>)}{!shares.some((share) => share.data.kind === page.replace(/s$/, "") || share.data.kind === page) && <div><strong>Nothing published yet.</strong><span>Your production team can push the latest version here.</span></div>}</div>}</>}
+      {page === "home" ? <><h1>{data.project.name}</h1><p className="client-welcome">Everything shared for {data.project.client}, together in one place.</p><div className="original-client-cards">{CLIENT_PAGES.map((card, index) => <button onClick={() => setPage(card.page)} key={card.page}><span>{pad(index + 1)}</span><h2>{card.page}</h2><p>{card.copy}</p><footer>OPEN <b>→</b></footer></button>)}</div></> : <><h1 className="client-page-title">{page}</h1>{page === "Budgets" && <ClientBudgetWorkspace versions={data.budgetVersions} shares={shares} expenses={data.expenses} />}{page === "Travel" && <ClientTravel project={data.project} records={data.records} shares={shares} />}{page === "Locations" && <><div className="client-location-pdf-actions"><div><span>LOCATION PRESENTATION</span><strong>View the complete, print-ready location deck.</strong></div><button onClick={() => setLocationPdfView(true)}>OPEN PDF VIEW ↗</button></div><ClientLocationBoard locations={data.locations} publish={publish} /></>}{(["Call Sheets", "Schedules", "Files"] as ClientPage[]).includes(page) && <div className="client-simple-list">{shares.filter((share) => share.data.kind === page.replace(/s$/, "") || share.data.kind === page).map((share) => <div key={share.id}><strong>{share.data.label}</strong><span>{share.data.date}</span><small>{share.data.status}</small><b>OPEN →</b></div>)}{!shares.some((share) => share.data.kind === page.replace(/s$/, "") || share.data.kind === page) && <div><strong>Nothing published yet.</strong><span>Your production team can push the latest version here.</span></div>}</div>}</>}
       <footer className="original-client-footer"><span>BILL, INC.</span><span>{data.project.code}</span><span>PRIVATE CLIENT PORTAL</span></footer>
     </main>
   </section>;

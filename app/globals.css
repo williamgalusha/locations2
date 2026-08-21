@@ -944,6 +944,43 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .client-simple-list { border-top: 1px solid var(--client-ink); background: var(--client-panel); }
 .client-simple-list > header, .client-simple-list > div { display: grid; grid-template-columns: 1fr 1.6fr .6fr .5fr; gap: 10px; align-items: center; min-height: 40px; padding: 0 12px; border-bottom: 1px solid var(--client-soft-line); font-size: 7px; }
 .client-simple-list > header { min-height: 27px; color: var(--client-quiet); font-size: 5px; font-weight: 800; }
+.client-budget-subnav { display: flex; margin-bottom: 9px; border: 1px solid var(--client-line); background: var(--client-panel); }
+.client-budget-subnav button { min-height: 33px; padding: 0 15px; border: 0; border-right: 1px solid var(--client-line); background: transparent; color: var(--client-muted); font-size: 6px; font-weight: 900; letter-spacing: .08em; cursor: pointer; }
+.client-budget-subnav button.active { background: var(--client-ink); color: var(--client-panel); }
+.client-reconciliation { border: 1px solid var(--client-line); background: var(--client-panel); }
+.client-reconciliation > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; min-height: 88px; padding: 15px; border-bottom: 2px solid var(--client-ink); }
+.client-reconciliation > header span { color: var(--client-quiet); font-size: 5px; font-weight: 800; letter-spacing: .1em; }
+.client-reconciliation > header h2 { margin: 6px 0 4px; font-size: 17px; letter-spacing: -.035em; }
+.client-reconciliation > header p { margin: 0; color: var(--client-muted); font-size: 6px; }
+.client-reconciliation > header > div:last-child { text-align: right; }
+.client-reconciliation > header strong { display: block; margin-top: 6px; font-size: 16px; }
+.client-travel-library, .client-travel-memo > article { border: 1px solid var(--client-line); background: var(--client-panel); }
+.client-travel-library > header { min-height: 88px; padding: 15px; border-bottom: 2px solid var(--client-ink); }
+.client-travel-library > header span { color: var(--client-quiet); font-size: 5px; font-weight: 800; letter-spacing: .1em; }
+.client-travel-library > header h2 { margin: 6px 0 4px; font-size: 17px; letter-spacing: -.035em; }
+.client-travel-library > header p { margin: 0; color: var(--client-muted); font-size: 6px; }
+.client-travel-library > div:not(.client-empty) > article { display: grid; grid-template-columns: 35px 1fr auto; gap: 13px; align-items: center; min-height: 65px; padding: 10px 14px; border-bottom: 1px solid var(--client-soft-line); }
+.client-travel-library > div:not(.client-empty) > article:last-child { border-bottom: 0; }
+.client-travel-library article > span { color: var(--client-quiet); font-size: 6px; font-weight: 800; }
+.client-travel-library article strong, .client-travel-library article small { display: block; }
+.client-travel-library article strong { font-size: 10px; }
+.client-travel-library article small { margin-top: 4px; color: var(--client-muted); font-size: 5px; }
+.client-travel-library article button, .client-travel-actions button { min-height: 29px; padding: 0 9px; border: 1px solid var(--client-ink); background: var(--client-ink); color: var(--client-panel); font-size: 5px; font-weight: 800; cursor: pointer; }
+.client-travel-actions { display: flex; justify-content: space-between; min-height: 43px; padding: 7px; border: 1px solid var(--client-line); border-bottom: 0; background: var(--client-panel); }
+.client-travel-actions button:first-child { border-color: var(--client-line); background: transparent; color: var(--client-ink); }
+.client-travel-memo > article { padding: 18px; }
+.client-travel-memo > article > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; padding-bottom: 15px; border-bottom: 3px solid var(--client-ink); }
+.client-travel-memo > article > header span { color: var(--client-quiet); font-size: 5px; font-weight: 800; letter-spacing: .11em; }
+.client-travel-memo > article > header h2 { margin: 6px 0 3px; font-size: 24px; text-transform: uppercase; }
+.client-travel-memo > article > header p { margin: 0; color: var(--client-muted); font-size: 6px; }
+.client-travel-memo > article > header > strong { font-size: 7px; }
+.client-travel-memo > article > section { margin-top: 19px; }
+.client-travel-memo > article h3 { margin: 0; padding-bottom: 6px; border-bottom: 1px solid var(--client-ink); font-size: 6px; letter-spacing: .13em; }
+.client-travel-memo > article > section > div { display: grid; grid-template-columns: 1.4fr 1fr .55fr; gap: 15px; align-items: center; min-height: 44px; border-bottom: 1px solid var(--client-soft-line); font-size: 7px; }
+.client-travel-memo > article > section strong, .client-travel-memo > article > section small { display: block; }
+.client-travel-memo > article > section small { margin-top: 3px; color: var(--client-muted); font-size: 5px; }
+.client-travel-memo > article > section > p { margin: 0; padding: 15px 0; color: var(--client-muted); font-size: 6px; }
+.client-travel-memo > article > footer { display: flex; justify-content: space-between; margin-top: 24px; padding-top: 7px; border-top: 1px solid var(--client-ink); color: var(--client-muted); font-size: 5px; font-weight: 800; }
 .client-empty { padding: 80px 20px; color: var(--client-muted, #888); text-align: center; }
 .client-location-pdf-actions { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 58px; margin-bottom: 10px; padding: 10px 13px; border: 1px solid var(--client-line); background: var(--client-panel); }
 .client-location-pdf-actions span, .client-location-pdf-actions strong { display: block; }
@@ -1273,6 +1310,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .client-budget-document-head, .client-budget-document-line { grid-template-columns: 38px minmax(0, 1fr) 85px; }
   .client-budget-document > section > header { grid-template-columns: 38px 1fr 85px; }
   .client-budget-document > footer { grid-template-columns: 1fr 55px 85px; }
+  .client-reconciliation > header { align-items: flex-start; flex-direction: column; }
+  .client-reconciliation > header > div:last-child { text-align: left; }
+  .client-travel-library > div:not(.client-empty) > article { grid-template-columns: 28px 1fr; }
+  .client-travel-library article button { grid-column: 2; justify-self: start; }
+  .client-travel-memo > article { padding: 12px; }
+  .client-travel-memo > article > section > div { grid-template-columns: 1fr; gap: 4px; padding: 9px 0; }
   .client-location-overlay { padding: 6px; }
   .client-location-detail { max-height: calc(100vh - 12px); }
   .client-location-detail > header nav button:not(:last-child) { display: none; }
@@ -1316,6 +1359,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   body[data-print-surface="client-budget"] .client-budget-view-actions { display: none !important; }
   body[data-print-surface="client-budget"] .original-client-portal { position: static; overflow: visible; background: #fff; }
   body[data-print-surface="client-budget"] .original-client-portal > main { width: 100%; padding: 0; }
+  body[data-print-surface="client-travel"] .original-client-portal > header,
+  body[data-print-surface="client-travel"] .client-date,
+  body[data-print-surface="client-travel"] .client-page-title,
+  body[data-print-surface="client-travel"] .original-client-footer,
+  body[data-print-surface="client-travel"] .client-travel-actions { display: none !important; }
+  body[data-print-surface="client-travel"] .original-client-portal { position: static; overflow: visible; background: #fff; }
+  body[data-print-surface="client-travel"] .original-client-portal > main { width: 100%; padding: 0; }
   body[data-print-surface="locations"] .original-location-presentation > header { display: none !important; }
   body[data-print-surface="locations"] .original-location-presentation { position: static; overflow: visible; background: #fff; }
   body[data-print-surface="locations"] .location-client-site { width: 100%; padding: 0; }

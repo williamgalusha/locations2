@@ -142,6 +142,11 @@ export function TravelDeskView({ project, records, crew, exports, picker, open, 
     printDocument(`${selectedPerson} Travel Memo`, memoPrintHtml(project, selectedPerson, memoCrew, memoFlights, memoHotels, memoCars), "portrait");
   }
 
+  function publishMemo() {
+    if (!selectedPerson) return;
+    void mutate({ action: "publish_client_item", kind: "Travel Memo", label: `${selectedPerson} · Travel Memo`, traveler: selectedPerson }, `${selectedPerson} travel memo pushed to client portal`);
+  }
+
   return <section className="page travel-desk">
     <header className="page-head"><div><p>LOGISTICS · SEPARATE LIVE CHARTS</p><h1>TRAVEL DESK</h1><span>Import once, then manage flights, hotels, cars, and individual travel memos in their own sections.</span></div><div><button className="black-button" onClick={open}>＋ MANUAL BOOKING</button></div></header>
     <input ref={picker} type="file" accept=".pdf,.eml,.txt,.html,message/rfc822,application/pdf" hidden onChange={onFile} />
@@ -159,7 +164,7 @@ export function TravelDeskView({ project, records, crew, exports, picker, open, 
     <div className="travel-chart car-chart"><div className="travel-chart-head"><span>Traveler / provider</span><span>Pickup</span><span>Drop-off</span><span>Date / time</span><span>Vehicle</span><span>Confirmation / status</span><span /></div>{visibleCars.length ? visibleCars.map((row) => <CarRecordRow record={cars.find((record) => record.id === row.id)!} row={row} changed={carChanges.fields.get(row.id)} mutate={mutate} key={row.id} />) : <ChartEmpty title="NO CAR BOOKINGS IN THIS VIEW" copy="Use the pickup planner or add a car booking manually." />}</div>
 
     <TravelSectionTitle number="04" kicker="Traveler-facing · Combined itinerary" title="TRAVEL MEMOS" copy="Search any crew member or traveler, review their complete memo, then print or save it as a PDF." />
-    <section className="memo-builder"><header><label>SEARCH TRAVELER<input list="travel-memo-names" value={memoPerson} onChange={(event) => setMemoPerson(event.target.value)} placeholder="Start typing a name…" /><datalist id="travel-memo-names">{people.map((name) => <option value={name} key={name} />)}</datalist></label><div><span>{selectedPerson ? `${memoFlights.length} FLIGHTS · ${memoHotels.length} HOTELS · ${memoCars.length} CARS` : "SELECT A TRAVELER"}</span><button className="black-button" disabled={!selectedPerson} onClick={exportMemo}>EXPORT MEMO PDF ↓</button></div></header>{selectedPerson ? <MemoPreview project={project} person={selectedPerson} crew={memoCrew} flights={memoFlights} hotels={memoHotels} cars={memoCars} /> : <ChartEmpty title="CHOOSE A TRAVELER" copy="Use the searchable field above to build their memo." />}</section>
+    <section className="memo-builder"><header><label>SEARCH TRAVELER<input list="travel-memo-names" value={memoPerson} onChange={(event) => setMemoPerson(event.target.value)} placeholder="Start typing a name…" /><datalist id="travel-memo-names">{people.map((name) => <option value={name} key={name} />)}</datalist></label><div><span>{selectedPerson ? `${memoFlights.length} FLIGHTS · ${memoHotels.length} HOTELS · ${memoCars.length} CARS` : "SELECT A TRAVELER"}</span><button className="outline-button" disabled={!selectedPerson} onClick={publishMemo}>PUSH TO CLIENT →</button><button className="black-button" disabled={!selectedPerson} onClick={exportMemo}>EXPORT MEMO PDF ↓</button></div></header>{selectedPerson ? <MemoPreview project={project} person={selectedPerson} crew={memoCrew} flights={memoFlights} hotels={memoHotels} cars={memoCars} /> : <ChartEmpty title="CHOOSE A TRAVELER" copy="Use the searchable field above to build their memo." />}</section>
   </section>;
 }
 

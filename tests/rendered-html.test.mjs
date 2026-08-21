@@ -50,6 +50,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /ADD TRANSFER TO CHART/);
   for (const feature of ["TRAVEL DESK", "FLIGHTS", "HOTEL CHARTS", "CAR BOOKINGS", "TRAVEL MEMOS", "EXPORT MEMO PDF", "EXCEL ↓", "PDF ↓"]) assert.match(travelView, new RegExp(feature));
   assert.match(travelView, /datalist id="travel-memo-names"/);
+  assert.match(travelView, /PUSH TO CLIENT →/);
+  assert.match(travelView, /kind: "Travel Memo"/);
   assert.match(travelView, /MASTER HOTEL ROOMING LIST/);
   assert.match(travelView, /CHANGES SINCE LAST EXPORT/);
   assert.match(travelView, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
@@ -60,6 +62,11 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /AUDIT BUDGET/);
   assert.match(referenceUi, /budget-audit-result/);
   assert.match(referenceUi, /DOCUMENT REVIEW/);
+  assert.match(referenceUi, /client-budget-subnav/);
+  assert.match(referenceUi, /PUBLISHED TRAVEL/);
+  assert.match(referenceUi, /DOWNLOAD MEMO PDF/);
+  assert.match(referenceUi, /\{ page: "Travel"/);
+  assert.doesNotMatch(referenceUi, /\{ page: "Reconciliation"/);
   assert.doesNotMatch(referenceUi, /OPENAI \+ DOCUMENT REVIEW/);
   assert.match(referenceUi, /cover-grid-original/);
   assert.match(referenceUi, /aria-label="Click to log in"/);
@@ -216,6 +223,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(travelTimeRoute, /GOOGLE_MAPS_API_KEY/);
   assert.match(travelTimeRoute, /process\.env/);
   assert.match(route, /versionId: textValue\(body\.versionId\)/);
+  assert.match(route, /traveler: textValue\(body\.traveler\)/);
   assert.match(route, /parser === "document" \? "Document" : "Text"/);
   assert.match(route, /"travel_export"/);
   await access(new URL("dist/server/index.js", root));

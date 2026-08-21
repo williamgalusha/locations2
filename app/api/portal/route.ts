@@ -588,7 +588,7 @@ export async function POST(request: Request) {
       await db.prepare("DELETE FROM module_records WHERE id = ? AND project_id = ?").bind(textValue(body.id), projectId).run();
       await logActivity(projectId, "project", "Production record removed", actor);
     } else if (action === "publish_client_item") {
-      const data = { kind: textValue(body.kind, "Document"), label: textValue(body.label, "Production update"), versionId: textValue(body.versionId), date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date()), status: "Shared" };
+      const data = { kind: textValue(body.kind, "Document"), label: textValue(body.label, "Production update"), versionId: textValue(body.versionId), traveler: textValue(body.traveler), date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date()), status: "Shared" };
       await db.prepare("INSERT INTO module_records VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "client_share", JSON.stringify(data), now, now).run();
       await logActivity(projectId, "client", `${data.label} shared to the client portal`, actor);
     } else {
