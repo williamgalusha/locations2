@@ -5,10 +5,11 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the BILL, INC. production control room instead of starter preview UI", async () => {
-  const [page, layout, portal, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute] = await Promise.all([
+  const [page, layout, portal, travelView, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("app/production-portal.tsx", root), "utf8"),
+    readFile(new URL("app/travel-view.tsx", root), "utf8"),
     readFile(new URL("app/reference-ui.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("package.json", root), "utf8"),
@@ -38,6 +39,12 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /AIRPORT ARRIVAL = 2 HOURS BEFORE FLIGHT/);
   assert.match(portal, /CHECK DRIVE \+ CALCULATE/);
   assert.match(portal, /ADD TRANSFER TO CHART/);
+  for (const feature of ["TRAVEL DESK", "FLIGHTS", "HOTEL CHARTS", "CAR BOOKINGS", "TRAVEL MEMOS", "EXPORT MEMO PDF", "EXCEL ↓", "PDF ↓"]) assert.match(travelView, new RegExp(feature));
+  assert.match(travelView, /datalist id="travel-memo-names"/);
+  assert.match(travelView, /MASTER HOTEL ROOMING LIST/);
+  assert.match(travelView, /CHANGES SINCE LAST EXPORT/);
+  assert.match(travelView, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
+  assert.match(travelView, /module: "travel_export"/);
   assert.match(referenceUi, /AUDIT BUDGET/);
   assert.match(referenceUi, /budget-audit-result/);
   assert.match(referenceUi, /OPENAI \+ DOCUMENT REVIEW/);
@@ -195,6 +202,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(travelTimeRoute, /GOOGLE_MAPS_API_KEY/);
   assert.match(travelTimeRoute, /process\.env/);
   assert.match(route, /versionId: textValue\(body\.versionId\)/);
+  assert.match(route, /"travel_export"/);
   await access(new URL("dist/server/index.js", root));
   await access(new URL("public/og.png", root));
 });

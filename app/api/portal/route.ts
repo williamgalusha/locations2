@@ -4,7 +4,7 @@ import { authorizePortalRequest, canAccessPortalProject, ensurePortalAuthSchema,
 export const runtime = "edge";
 
 const FALLBACK_PROJECT_ID = "prj_harbor";
-const MODULES = new Set(["crew", "travel", "schedule", "production", "client_share"]);
+const MODULES = new Set(["crew", "travel", "travel_export", "schedule", "production", "client_share"]);
 
 type ActionBody = { action?: string; projectId?: unknown; [key: string]: unknown };
 

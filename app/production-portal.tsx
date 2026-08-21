@@ -4,6 +4,7 @@ import type { ChangeEvent, DragEvent, FormEvent, ReactNode, RefObject } from "re
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ReferenceBudgetView, ReferenceClientPortal, ReferenceLocationsView, ReferenceLoginScreen } from "./reference-ui";
 import type { PortalAccessLevel, PortalRole } from "./credential-auth";
+import { TravelDeskView } from "./travel-view";
 
 export type Project = { id: string; name: string; client: string; code: string; status: string; shoot_start: string; shoot_end: string; currency: string; contact?: string; contact_email?: string; billing_address?: string; po_no?: string; budget_notes?: string; budget_changes?: string; markup_pct?: number; insurance_pct?: number };
 export type BudgetLine = { id: string; category: string; description: string; estimate: number; actual: number; section_code?: string; item_code?: string; item_name?: string; rate?: number; quantity?: number; days?: number; tax_pct?: number; is_na?: number; na_note?: string };
@@ -13,7 +14,7 @@ type Expense = { id: string; budget_line_id: string; vendor: string; amount: num
 export type Location = { id: string; name: string; city: string; rate: number; status: string; image_url: string; tags: string; note: string; client_note: string; category?: string; square_feet?: string; availability?: string; blurb?: string; gallery?: string | string[]; deleted_at?: string; client_visible?: number };
 type Activity = { id: string; kind: string; message: string; actor: string; created_at: string };
 type RecordData = Record<string, string>;
-type ModuleRecord = { id: string; module: string; data: RecordData; created_at: string; updated_at: string };
+export type ModuleRecord = { id: string; module: string; data: RecordData; created_at: string; updated_at: string };
 type FileAsset = { id: string; object_key: string; filename: string; content_type: string; size: number; category: string; status: string; budget_line_id?: string; expense_id?: string; vendor?: string; amount?: number; spend_date?: string; memo?: string; created_at: string };
 type AuditNote = { severity: "critical" | "review" | "info"; title: string; detail: string; line_code?: string; amount?: number };
 type BudgetAudit = { id: string; source: string; status: string; summary: string; notes: string | AuditNote[]; created_at: string };
@@ -249,7 +250,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         {active === "cc" && <CCView expenses={expenses} lines={data.budgetLines} ccPicker={ccPicker} importStatement={importStatement} openComposer={setComposer} mutate={mutate} />}
         {active === "production" && <RecordView title="Production Sheet" kicker="Operations · Live list" copy="Open items, vendor decisions, and wrap-book notes in one shared sheet." records={moduleRows(data, "production")} columns={["section", "item", "owner", "status"]} open={() => setComposer("production")} remove={(id) => mutate({ action: "delete_module_record", id }, "Production item removed")} />}
         {active === "crew" && <HeadcountView crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} open={() => setComposer("crew")} mutate={mutate} />}
-        {active === "travel" && <TravelView records={moduleRows(data, "travel")} picker={travelPicker} open={() => setComposer("travel")} mutate={mutate} />}
+        {active === "travel" && <TravelDeskView project={data.project} records={moduleRows(data, "travel")} crew={moduleRows(data, "crew")} exports={moduleRows(data, "travel_export")} picker={travelPicker} open={() => setComposer("travel")} mutate={mutate} />}
         {active === "schedule" && <ScheduleView records={moduleRows(data, "schedule")} open={() => setComposer("schedule")} mutate={mutate} publish={() => mutate({ action: "publish_client_item", kind: "Schedule", label: `${data.project.name} · Shooting Schedule` }, "Schedule pushed to client portal")} />}
         {active === "callsheet" && <CallSheet project={data.project} crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} travel={moduleRows(data, "travel")} locations={data.locations} publish={() => mutate({ action: "publish_client_item", kind: "Call Sheet", label: `${data.project.name} · Day 01 Call Sheet` }, "Call sheet pushed to client portal")} />}
         {active === "locations" && <ReferenceLocationsView project={data.project} locations={locations} open={() => setComposer("location")} mutate={mutate} />}
@@ -523,7 +524,19 @@ function BackupAllocationModal({ file, lines, saving, close, upload }: { file: F
 
 function ComposerModal({ type, lines, saving, close, submit }: { type: Exclude<Composer, null>; lines: BudgetLine[]; saving: boolean; close: () => void; submit: Mutate }) {
   const codedLines = codedBudgetLines(lines);
-  function onSubmit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries()); if (["production", "crew", "schedule", "travel"].includes(type)) { submit({ action: "add_module_record", module: type, data: values }, `${titleCase(type)} record added`); return; } const action = type === "project" ? "create_project" : type === "budget" ? "add_budget_line" : type === "expense" ? "add_expense" : "add_location"; submit({ ...values, action }, `${titleCase(type)} added`); }
+  const [travelType, setTravelType] = useState("Flight");
+  function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const values = Object.fromEntries(new FormData(event.currentTarget).entries());
+    if (type === "travel") {
+      const data = { ...values } as Record<string, FormDataEntryValue>;
+      if (travelType === "Flight") { data.detail = `${values.from || "Origin"} → ${values.to || "Destination"} · ${values.flightNumber || "Flight TBD"}`; data.timing = `${values.departDate || "Date TBD"} · ${values.departTime || "Time TBD"}`; }
+      if (travelType === "Hotel") { data.provider = values.hotel || "Hotel TBD"; data.departDate = values.checkIn || ""; data.arriveDate = values.checkOut || ""; data.detail = `${values.hotel || "Hotel TBD"} · lodging`; data.timing = `${values.checkIn || "Check-in TBD"}–${values.checkOut || "Check-out TBD"}`; }
+      if (["Car", "Transfer"].includes(travelType)) { data.detail = `${values.from || "Pickup TBD"} → ${values.to || "Drop-off TBD"}`; data.timing = `${values.departDate || "Date TBD"} · ${values.departTime || "Time TBD"}`; }
+      void submit({ action: "add_module_record", module: type, data }, `${travelType} booking added`); return;
+    }
+    if (["production", "crew", "schedule"].includes(type)) { void submit({ action: "add_module_record", module: type, data: values }, `${titleCase(type)} record added`); return; }
+    const action = type === "project" ? "create_project" : type === "budget" ? "add_budget_line" : type === "expense" ? "add_expense" : "add_location"; void submit({ ...values, action }, `${titleCase(type)} added`);
+  }
   const title = type === "project" ? "New Production" : type === "budget" ? "New Budget Line" : type === "expense" ? "New Expense" : type === "location" ? "New Location" : type === "crew" ? "Add Crew Member" : type === "travel" ? "Add Travel Record" : type === "schedule" ? "Add Schedule Row" : "Add Production Item";
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><form className="composer" onSubmit={onSubmit}><header><div><p>QUICK ADD</p><h2>{title}</h2></div><button type="button" onClick={close}>×</button></header>
     {type === "project" && <><Field label="Project name" name="name" /><Field label="Client" name="client" /><div className="field-pair"><Field label="Job code" name="code" /><Field label="Shoot start" name="shootStart" type="date" /></div><Field label="Shoot end" name="shootEnd" type="date" /></>}
@@ -533,7 +546,11 @@ function ComposerModal({ type, lines, saving, close, submit }: { type: Exclude<C
     {type === "production" && <><Field label="Section" name="section" /><Field label="Item" name="item" /><div className="field-pair"><Field label="Owner" name="owner" /><Field label="Status" name="status" /></div></>}
     {type === "crew" && <><Field label="Name" name="name" /><Field label="Role" name="role" /><div className="field-pair"><Field label="Email" name="email" type="email" /><Field label="Phone" name="phone" /></div><div className="field-pair"><Field label="Dietary" name="dietary" required={false} /><Field label="Call offset (minutes)" name="callOffset" type="number" placeholder="-15" /></div><Field label="Call location" name="callLocation" placeholder="Basecamp" /></>}
     {type === "schedule" && <><Field label="Time" name="time" type="time" /><Field label="Event" name="event" /><Field label="Location" name="location" /></>}
-    {type === "travel" && <><label>Type<select name="type"><option>Flight</option><option>Hotel</option><option>Car</option><option>Transfer</option></select></label><Field label="Traveler" name="traveler" /><Field label="Route / property" name="detail" /><div className="field-pair"><Field label="Timing" name="timing" /><Field label="Confirmation" name="confirmation" required={false} /></div><Field label="Status" name="status" placeholder="Confirmed" /></>}
+    {type === "travel" && <><label>Booking type<select name="type" value={travelType} onChange={(event) => setTravelType(event.target.value)}><option>Flight</option><option>Hotel</option><option>Car</option><option>Transfer</option></select></label><Field label="Traveler" name="traveler" />
+      {travelType === "Flight" && <><div className="field-pair"><Field label="Airline" name="provider" /><Field label="Flight number" name="flightNumber" /></div><div className="field-pair"><Field label="Origin" name="from" /><Field label="Destination" name="to" /></div><div className="field-pair"><Field label="Departure date" name="departDate" type="date" /><Field label="Departure time" name="departTime" /></div><div className="field-pair"><Field label="Arrival date" name="arriveDate" type="date" /><Field label="Arrival time" name="arriveTime" /></div></>}
+      {travelType === "Hotel" && <><Field label="Hotel" name="hotel" /><div className="field-pair"><Field label="Team" name="team" required={false} /><Field label="Role" name="role" required={false} /></div><div className="field-pair"><Field label="Room type" name="roomType" placeholder="Standard King" /><Field label="Charges" name="payment" placeholder="Room + tax" /></div><div className="field-pair"><Field label="Pay by" name="payBy" placeholder="Production" /><Field label="Nightly rate" name="rate" type="number" required={false} /></div><div className="field-pair"><Field label="Check in" name="checkIn" type="date" /><Field label="Check out" name="checkOut" type="date" /></div></>}
+      {["Car", "Transfer"].includes(travelType) && <><Field label="Car company / provider" name="provider" /><div className="field-pair"><Field label="Pickup" name="from" /><Field label="Drop-off" name="to" /></div><div className="field-pair"><Field label="Pickup date" name="departDate" type="date" /><Field label="Pickup time" name="departTime" /></div><Field label="Vehicle" name="vehicle" placeholder="Sedan / SUV / Van" /><Field label="Dispatch notes" name="notes" required={false} /></>}
+      <div className="field-pair"><Field label="Confirmation" name="confirmation" required={false} /><Field label="Status" name="status" placeholder="Confirmed" /></div></>}
     <footer><button type="button" onClick={close}>CANCEL</button><button className="black-button" disabled={saving}>{saving ? "SAVING…" : "SAVE"}</button></footer></form></div>;
 }
 
