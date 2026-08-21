@@ -55,6 +55,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(travelView, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
   assert.match(travelView, /module: "travel_export"/);
   assert.match(travelView, /Document parsing routes/);
+  assert.match(travelView, /replace\(\/OpenAI\/gi, "Document"\)/);
   assert.doesNotMatch(travelView, /AI parsing routes/);
   assert.match(referenceUi, /AUDIT BUDGET/);
   assert.match(referenceUi, /budget-audit-result/);
@@ -215,6 +216,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(travelTimeRoute, /GOOGLE_MAPS_API_KEY/);
   assert.match(travelTimeRoute, /process\.env/);
   assert.match(route, /versionId: textValue\(body\.versionId\)/);
+  assert.match(route, /parser === "document" \? "Document" : "Text"/);
   assert.match(route, /"travel_export"/);
   await access(new URL("dist/server/index.js", root));
   await access(new URL("public/og.png", root));

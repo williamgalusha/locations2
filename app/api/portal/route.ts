@@ -719,8 +719,8 @@ function readableTravelTime(value: string | null) {
   if (!value) return ""; const match = value.match(/^(\d{1,2}):(\d{2})/); if (!match) return value; const hour = Number(match[1]); return `${hour % 12 || 12}:${match[2]} ${hour >= 12 ? "PM" : "AM"}`;
 }
 
-function recordsForReservation(extraction: ReservationExtraction, input: ReservationInput, parser: "OpenAI" | "text") {
-  const traveler = extraction.passenger_names.join(", ") || input.fallbackTraveler || "Traveler not listed"; const reference = extraction.reservation_reference || "—"; const source = `${input.filename} · ${parser} parsed`;
+function recordsForReservation(extraction: ReservationExtraction, input: ReservationInput, parser: "document" | "text") {
+  const traveler = extraction.passenger_names.join(", ") || input.fallbackTraveler || "Traveler not listed"; const reference = extraction.reservation_reference || "—"; const source = `${input.filename} · ${parser === "document" ? "Document" : "Text"} parsed`;
   const flights = extraction.flights.map((flight, index) => {
     const from = endpoint(flight.origin_iata, flight.origin_city, flight.origin_airport); const to = endpoint(flight.destination_iata, flight.destination_city, flight.destination_airport);
     const depart = readableTravelTime(flight.departure_time); const arrive = readableTravelTime(flight.arrival_time); const date = readableTravelDate(flight.departure_date);
@@ -734,7 +734,7 @@ function recordsForReservation(extraction: ReservationExtraction, input: Reserva
 }
 
 async function parseReservation(input: ReservationInput) {
-  const fallback = deterministicReservation(input.raw); let extraction: ReservationExtraction | null = null; let parser: "OpenAI" | "text" = "OpenAI";
+  const fallback = deterministicReservation(input.raw); let extraction: ReservationExtraction | null = null; let parser: "document" | "text" = "document";
   try { extraction = await openAiReservation(input); } catch (error) { if (!fallback) throw error; }
   if (!extraction && fallback) { extraction = fallback; parser = "text"; }
   if (!extraction) throw new Error("No complete flight segments were found. Try the original airline PDF or paste the confirmation email text.");
