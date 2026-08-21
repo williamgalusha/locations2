@@ -4,7 +4,7 @@ import { authorizePortalRequest, canAccessPortalProject, ensurePortalAuthSchema,
 export const runtime = "edge";
 
 const FALLBACK_PROJECT_ID = "prj_harbor";
-const MODULES = new Set(["crew", "travel", "travel_export", "schedule", "production", "client_share"]);
+const MODULES = new Set(["crew", "travel", "travel_export", "schedule", "production", "casting", "art_buying", "budget_comment", "client_share"]);
 
 type ActionBody = { action?: string; projectId?: unknown; [key: string]: unknown };
 
@@ -314,7 +314,7 @@ export async function POST(request: Request) {
     const now = new Date().toISOString();
 
     if (action !== "create_project" && !canAccessPortalProject(authorization, projectId)) return Response.json({ error: "This login does not have access to that project." }, { status: 403 });
-    if (authorization.role === "client" && action !== "update_location_status") return Response.json({ error: "Client logins can only update client-facing project selections." }, { status: 403 });
+    if (authorization.role === "client" && !new Set(["update_location_status", "add_budget_comment"]).has(action)) return Response.json({ error: "Client logins can only update client-facing selections and submit budget comments." }, { status: 403 });
 
     if (action === "create_project") {
       if (authorization.accessLevel !== "admin" && authorization.accessLevel !== "full") return Response.json({ error: "Only administrators and full-access users can create projects." }, { status: 403 });
@@ -639,18 +639,38 @@ export async function POST(request: Request) {
       if ((status === "Closed" || current?.status === "Closed") && !authorization.isAdmin) return Response.json({ error: "Only an administrator can close or reopen a job." }, { status: 403 });
       await db.prepare("UPDATE projects SET status = ? WHERE id = ?").bind(status, projectId).run();
       await logActivity(projectId, "project", `Project status changed to ${status}`, actor);
+    } else if (action === "add_budget_comment") {
+      const comment = textValue(body.comment).slice(0, 4000);
+      if (!comment) throw new Error("Write a comment before sending it.");
+      const data = {
+        versionId: textValue(body.versionId), versionName: textValue(body.versionName),
+        anchorType: textValue(body.anchorType, "document"), anchorId: textValue(body.anchorId),
+        anchorLabel: textValue(body.anchorLabel, "Entire budget"), comment,
+        author: actor, status: "open", date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date()),
+      };
+      await db.prepare("INSERT INTO module_records VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "budget_comment", JSON.stringify(data), now, now).run();
+      await logActivity(projectId, "comment", `New client budget comment on ${data.anchorLabel}`, actor);
+    } else if (action === "resolve_budget_comment") {
+      if (authorization.role === "client") return Response.json({ error: "Only production can resolve client comments." }, { status: 403 });
+      const id = textValue(body.id);
+      const existing = await db.prepare("SELECT data FROM module_records WHERE id = ? AND project_id = ? AND module = 'budget_comment' LIMIT 1").bind(id, projectId).first<{ data: string }>();
+      if (!existing) throw new Error("That budget comment no longer exists.");
+      let commentData: Record<string, unknown> = {};
+      try { commentData = JSON.parse(existing.data) as Record<string, unknown>; } catch { /* preserve a valid object */ }
+      await db.prepare("UPDATE module_records SET data = ?, updated_at = ? WHERE id = ? AND project_id = ?").bind(JSON.stringify({ ...commentData, status: "resolved", resolvedAt: now, resolvedBy: actor }), now, id, projectId).run();
+      await logActivity(projectId, "comment", `Budget comment resolved: ${String(commentData.anchorLabel || "Budget")}`, actor);
     } else if (action === "add_module_record") {
-      const module = textValue(body.module);
-      if (!MODULES.has(module)) throw new Error("Unsupported production module.");
+      const moduleName = textValue(body.module);
+      if (!MODULES.has(moduleName)) throw new Error("Unsupported production module.");
       const data = body.data && typeof body.data === "object" ? body.data : {};
-      await db.prepare("INSERT INTO module_records VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, module, JSON.stringify(data), now, now).run();
-      await logActivity(projectId, module, `${statusLabel(module)} record added`, actor);
+      await db.prepare("INSERT INTO module_records VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, moduleName, JSON.stringify(data), now, now).run();
+      await logActivity(projectId, moduleName, `${statusLabel(moduleName)} record added`, actor);
     } else if (action === "update_module_record") {
-      const module = textValue(body.module);
-      if (!MODULES.has(module)) throw new Error("Unsupported production module.");
+      const moduleName = textValue(body.module);
+      if (!MODULES.has(moduleName)) throw new Error("Unsupported production module.");
       const data = body.data && typeof body.data === "object" ? body.data : {};
-      await db.prepare("UPDATE module_records SET data = ?, updated_at = ? WHERE id = ? AND project_id = ? AND module = ?").bind(JSON.stringify(data), now, textValue(body.id), projectId, module).run();
-      await logActivity(projectId, module, `${statusLabel(module)} record updated`, actor);
+      await db.prepare("UPDATE module_records SET data = ?, updated_at = ? WHERE id = ? AND project_id = ? AND module = ?").bind(JSON.stringify(data), now, textValue(body.id), projectId, moduleName).run();
+      await logActivity(projectId, moduleName, `${statusLabel(moduleName)} record updated`, actor);
     } else if (action === "import_travel_reservation") {
       const parsed = await parseReservation({ raw: textValue(body.text), fileData: typeof body.fileData === "string" ? body.fileData : "", filename: textValue(body.filename, "Travel reservation"), fallbackTraveler: textValue(body.traveler), autoHotel: body.autoHotel === true, autoCar: body.autoCar === true });
       await db.batch(parsed.records.map((data) => db.prepare("INSERT INTO module_records VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "travel", JSON.stringify(data), now, now)));
@@ -668,7 +688,8 @@ export async function POST(request: Request) {
         openCommitment: String(signedNumberValue(body.openCommitment)),
         percent: String(numberValue(body.percent)),
       } : {};
-      const data = { kind, label: textValue(body.label, "Production update"), versionId: textValue(body.versionId), traveler: textValue(body.traveler), date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date()), status: "Shared", ...reconciliationSnapshot };
+      const snapshot = typeof body.snapshot === "string" ? body.snapshot.slice(0, 200000) : "";
+      const data = { kind, label: textValue(body.label, "Production update"), versionId: textValue(body.versionId), traveler: textValue(body.traveler), moduleKey: textValue(body.moduleKey), sectionId: textValue(body.sectionId), snapshot, date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date()), status: "Shared", ...reconciliationSnapshot };
       await db.prepare("INSERT INTO module_records VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "client_share", JSON.stringify(data), now, now).run();
       await logActivity(projectId, "client", `${data.label} shared to the client portal`, actor);
     } else {
