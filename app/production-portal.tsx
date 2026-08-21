@@ -11,17 +11,21 @@ export type BudgetLine = { id: string; category: string; description: string; es
 export type BudgetSnapshot = Pick<BudgetLine, "id" | "category" | "description" | "estimate" | "section_code" | "item_code" | "item_name" | "rate" | "quantity" | "days" | "tax_pct" | "is_na" | "na_note">;
 export type BudgetVersion = { id: string; name: string; status: string; snapshot: BudgetSnapshot[]; created_at: string };
 type Expense = { id: string; budget_line_id: string; vendor: string; amount: number; spend_date: string; status: string; memo: string };
-export type Location = { id: string; name: string; city: string; rate: number; status: string; image_url: string; tags: string; note: string; client_note: string; category?: string; square_feet?: string; availability?: string; blurb?: string; gallery?: string | string[]; deleted_at?: string; client_visible?: number };
+export type Location = { id: string; name: string; city: string; rate: number; status: string; image_url: string; tags: string; note: string; client_note: string; category?: string; square_feet?: string; availability?: string; blurb?: string; gallery?: string | string[]; deleted_at?: string; client_visible?: number; address?: string; latitude?: number | null; longitude?: number | null; maps_url?: string; street_view_url?: string; map_x?: number; map_y?: number };
+export type GlobalLocation = Location & { project_id: string; project_name: string; project_client: string; project_code: string; project_status: string };
 type Activity = { id: string; kind: string; message: string; actor: string; created_at: string };
 type RecordData = Record<string, string>;
 export type ModuleRecord = { id: string; module: string; data: RecordData; created_at: string; updated_at: string };
 type FileAsset = { id: string; object_key: string; filename: string; content_type: string; size: number; category: string; status: string; budget_line_id?: string; expense_id?: string; vendor?: string; amount?: number; spend_date?: string; memo?: string; created_at: string };
 type AuditNote = { severity: "critical" | "review" | "info"; title: string; detail: string; line_code?: string; amount?: number };
 type BudgetAudit = { id: string; source: string; status: string; summary: string; notes: string | AuditNote[]; created_at: string };
+type LibraryFile = { id: string; object_key: string; filename: string; content_type: string; size: number; category: string; description: string; uploaded_by: string; created_at: string };
 type PickupPlan = { origin: string; destination: string; tripType: "to_airport" | "from_airport" | "general"; eventDateTime: string; pickupAt: string; arriveBy: string; estimatedDestinationAt: string; airportLeadMinutes: number; bufferMinutes: number; providerConfigured: boolean; driveMinutes: number; staticMinutes: number | null; trafficDelayMinutes: number | null; distanceMiles: number | null; source: "google_traffic" | "estimated" };
 export type ClientCredential = { username: string; active: number | boolean; updated_at: string } | null;
-export type PortalData = { projects: Project[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[]; audits: BudgetAudit[]; clientCredential: ClientCredential };
+export type ProjectSummary = Pick<Project, "id" | "name" | "client" | "code" | "status" | "shoot_start" | "shoot_end" | "currency"> & { estimate: number; committed: number; actual: number; backupCount: number; missingBackupCount: number };
+export type PortalData = { projects: Project[]; projectSummaries: ProjectSummary[]; project: Project; budgetLines: BudgetLine[]; budgetVersions: BudgetVersion[]; expenses: Expense[]; locations: Location[]; globalLocations: GlobalLocation[]; activities: Activity[]; records: ModuleRecord[]; files: FileAsset[]; audits: BudgetAudit[]; clientCredential: ClientCredential };
 type View = "control" | "budget" | "reconcile" | "backup" | "cc" | "production" | "crew" | "schedule" | "travel" | "callsheet" | "locations" | "client" | "settings" | "activity";
+type AccountSection = "home" | "jobs" | "locations" | "templates";
 type Composer = "budget" | "expense" | "location" | "project" | "production" | "crew" | "schedule" | "travel" | null;
 export type User = { name: string; email: string; credential?: boolean; role?: PortalRole; accessLevel?: PortalAccessLevel; projectIds?: string[] } | null;
 export type Mutate = (payload: Record<string, unknown>, success: string) => Promise<boolean>;
@@ -42,6 +46,9 @@ const relativeTime = (value: string) => { const hours = Math.max(1, Math.round((
 const initials = (name: string) => name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join("") || "BI";
 const moduleRows = (data: PortalData, module: string) => data.records.filter((record) => record.module === module);
 const pad = (value: number) => String(value).padStart(2, "0");
+const LAST_PROJECT_KEY = "bill-last-project";
+const LAST_PROJECT_TTL = 24 * 60 * 60 * 1000;
+const lastProjectStorageKey = (email: string) => `${LAST_PROJECT_KEY}:${email.trim().toLowerCase()}`;
 
 function codedBudgetLines(lines: BudgetLine[]) {
   const ordered = [...lines].sort((a, b) => {
@@ -60,7 +67,9 @@ function codedBudgetLines(lines: BudgetLine[]) {
 
 export default function ProductionPortal({ initialUser }: { initialUser: User }) {
   const [previewUser, setPreviewUser] = useState<User>(null);
-  const [entered, setEntered] = useState(false);
+  const [entered, setEntered] = useState(Boolean(initialUser));
+  const [accountHome, setAccountHome] = useState(initialUser?.role !== "client");
+  const [accountSection, setAccountSection] = useState<AccountSection>("home");
   const [data, setData] = useState<PortalData | null>(null);
   const [active, setActive] = useState<View>("control");
   const [composer, setComposer] = useState<Composer>(null);
@@ -79,6 +88,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   const filePicker = useRef<HTMLInputElement>(null);
   const ccPicker = useRef<HTMLInputElement>(null);
   const travelPicker = useRef<HTMLInputElement>(null);
+  const resumeChecked = useRef(false);
   const user = previewUser ?? initialUser;
   const localPreview = !initialUser && Boolean(previewUser);
 
@@ -92,7 +102,22 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     document.documentElement.dataset.density = compact ? "compact" : "comfortable";
     document.documentElement.dataset.reduceMotion = reduced ? "true" : "false";
   }, []);
-  useEffect(() => { if (user) loadProject(); }, [Boolean(user)]);
+  useEffect(() => { if (user && !data) void loadProject(); }, [Boolean(user), Boolean(data)]);
+  useEffect(() => {
+    if (!entered || !user || !data || resumeChecked.current) return;
+    resumeChecked.current = true;
+    if (user.role === "client") return;
+    try {
+      const storageKey = lastProjectStorageKey(user.email);
+      const recent = JSON.parse(window.localStorage.getItem(storageKey) || "null") as { projectId?: string; openedAt?: number } | null;
+      const valid = recent?.projectId && typeof recent.openedAt === "number" && Date.now() - recent.openedAt < LAST_PROJECT_TTL && data.projects.some((project) => project.id === recent.projectId);
+      if (!valid) { window.localStorage.removeItem(storageKey); return; }
+      const requestedProject = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("project");
+      if (requestedProject !== recent.projectId) return;
+      if (recent.projectId === data.project.id) setAccountHome(false);
+      else void loadProject(recent.projectId).then((loaded) => { if (loaded) setAccountHome(false); });
+    } catch { window.localStorage.removeItem(lastProjectStorageKey(user.email)); }
+  }, [entered, user, data]);
 
   function setThemeMode(next: "light" | "dark") {
     setTheme(next); document.documentElement.dataset.theme = next; window.localStorage.setItem("bill-theme", next);
@@ -108,14 +133,29 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     setReduceMotion(next); document.documentElement.dataset.reduceMotion = next ? "true" : "false"; window.localStorage.setItem("bill-reduce-motion", String(next));
   }
 
+  function rememberProject(projectId: string) {
+    if (!user || user.role === "client") return;
+    window.localStorage.setItem(lastProjectStorageKey(user.email), JSON.stringify({ projectId, openedAt: Date.now() }));
+  }
+
+  function markProjectRoute(projectId: string) {
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}#project=${encodeURIComponent(projectId)}`);
+  }
+
+  function openAccountHome(section: AccountSection = "home") {
+    resumeChecked.current = true;
+    window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+    setClientPreview(false); setProjectMenu(false); setAccountSection(section); setAccountHome(true);
+  }
+
   async function loadProject(projectId?: string) {
     setError("");
     try {
       const response = await fetch(`/api/portal${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`);
       const payload = await response.json() as PortalData & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Could not load production data.");
-      setData(payload); setProjectMenu(false);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load production data."); }
+      setData(payload); setProjectMenu(false); return true;
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not load production data."); return false; }
   }
 
   const totals = useMemo(() => {
@@ -129,7 +169,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     if (!data && payload.action !== "create_project") return false;
     setSaving(true); setError("");
     try {
-      const response = await fetch("/api/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, projectId: data?.project.id }) });
+      const response = await fetch("/api/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: data?.project.id, ...payload }) });
       const next = await response.json() as PortalData & { error?: string };
       if (!response.ok) throw new Error(next.error ?? "That change could not be saved.");
       setData(next); setComposer(null); setToast(success); window.setTimeout(() => setToast(""), 2600);
@@ -200,34 +240,64 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     const response = await fetch("/api/credential-login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username, password, role }) });
     const payload = await response.json() as { error?: string; user: User };
     if (!response.ok) throw new Error(payload.error || "That login could not be completed.");
-    setPreviewUser(payload.user); setActive(role === "client" ? "client" : "control"); setClientPreview(role === "client"); setEntered(true);
+    const loaded = await loadProject();
+    if (!loaded) throw new Error("Your login worked, but the portal could not open. Please try again.");
+    setPreviewUser(payload.user); setActive(role === "client" ? "client" : "control"); setClientPreview(role === "client");
+    if (role === "client") setAccountHome(false); else openAccountHome();
+    setEntered(true);
   }
 
-  function enterFor(role: PortalRole = user?.role === "client" ? "client" : "production") {
-    setActive(role === "client" ? "client" : "control"); setClientPreview(role === "client"); setEntered(true);
+  async function enterFor(role: PortalRole = user?.role === "client" ? "client" : "production") {
+    if (!data && !(await loadProject())) return;
+    setActive(role === "client" ? "client" : "control"); setClientPreview(role === "client");
+    if (role === "client") setAccountHome(false); else openAccountHome();
+    setEntered(true);
+  }
+
+  async function openProjectFromAccount(projectId: string) {
+    if (!(await loadProject(projectId))) return;
+    const client = user?.role === "client";
+    rememberProject(projectId);
+    if (!client) markProjectRoute(projectId);
+    setActive(client ? "client" : "control"); setClientPreview(client); setAccountHome(false);
+  }
+
+  async function openProjectLocations(projectId: string) {
+    if (!(await loadProject(projectId))) return;
+    rememberProject(projectId);
+    markProjectRoute(projectId);
+    setActive("locations"); setClientPreview(false); setAccountSection("home"); setAccountHome(false);
   }
 
   async function logOut() {
     if (user?.credential) await fetch("/api/credential-login", { method: "DELETE" });
-    setPreviewUser(null); setData(null); setEntered(false); setUserControls(false);
+    setPreviewUser(null); setData(null); setEntered(false); setAccountHome(true); setAccountSection("home"); setUserControls(false);
     if (initialUser?.credential) window.location.reload();
   }
 
   if (!entered) return <ReferenceLoginScreen user={user} enter={enterFor} credentialLogin={credentialLogin} />;
   if (!user) return <ReferenceLoginScreen user={null} enter={enterFor} credentialLogin={credentialLogin} />;
-  if (!data && !error) return <div className="portal-loading"><span>B,</span><p>OPENING PRODUCTION WORKSPACE…</p></div>;
+  if (!data && !error) return null;
   if (!data) return <div className="portal-error"><span>BILL, INC.</span><h1>THE PRODUCTION COULD NOT OPEN.</h1><p>{error}</p><button onClick={() => loadProject()}>TRY AGAIN</button></div>;
+
+  if (accountHome) return <>
+    <PortalAccountWorkspace section={accountSection} setSection={setAccountSection} data={data} user={user} openProject={openProjectFromAccount} openProjectLocations={openProjectLocations} createProject={() => setComposer("project")} manageUsers={() => setUserControls(true)} updateProjectStatus={(projectId, status) => mutate({ action: "update_project_status", projectId, status }, status === "Closed" ? "Job closed" : "Job reopened")} theme={theme} toggleTheme={toggleTheme} logOut={logOut} />
+    {composer && <ComposerModal type={composer} lines={data.budgetLines} saving={saving} close={() => setComposer(null)} submit={mutate} />}
+    {userControls && <UserControlsDrawer user={user} project={data.project} projects={data.projects} theme={theme} compactRows={compactRows} reduceMotion={reduceMotion} close={() => setUserControls(false)} setTheme={setThemeMode} setCompactRows={setCompactMode} setReduceMotion={setMotionMode} logOut={logOut} externalLogout={!localPreview && !user.credential} />}
+    {error && <div className="account-home-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
+    {toast && <div className="toast"><span>✓</span>{toast}</div>}
+  </>;
 
   const search = query.toLowerCase();
   const lines = data.budgetLines.filter((line) => `${line.category} ${line.description}`.toLowerCase().includes(search));
   const expenses = data.expenses.filter((expense) => `${expense.vendor} ${expense.memo}`.toLowerCase().includes(search));
   const locations = data.locations.filter((location) => `${location.name} ${location.city} ${location.tags}`.toLowerCase().includes(search));
 
-  if (user.role === "client") return <ReferenceClientPortal data={data} totals={totals} preview setPreview={(value) => { if (!value) void logOut(); }} publish={mutate} clientOnly />;
+  if (user.role === "client") return <ReferenceClientPortal data={data} totals={totals} preview setPreview={(value) => { if (!value) void logOut(); }} publish={mutate} theme={theme} toggleTheme={toggleTheme} clientOnly />;
 
   return <main className="portal-shell">
     <aside className="sidebar">
-      <button className="brand" onClick={() => openView("control")}><img src="/bill-inc.png" alt="BILL, INC." /></button>
+      <button type="button" className="brand" onClick={() => openAccountHome()} title="Portal home"><img src="/bill-inc.png" alt="BILL, INC." /></button>
       <div className="side-project"><span>{data.project.code}</span><strong>{data.project.name}</strong><small>{data.project.client}</small></div>
       <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => { const backed = new Set(data.files.filter((file) => file.category.toLowerCase() === "backup").map((file) => file.expense_id).filter(Boolean)); const missingBackup = data.expenses.filter((expense) => !backed.has(expense.id)).length; return <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && missingBackup > 0 && <i>{missingBackup}</i>}</button>; })}</div>)}</nav>
       <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserControls(true)} aria-haspopup="dialog" aria-expanded={userControls}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>→</b></button></div>
@@ -235,7 +305,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
 
     <section className="workspace">
       <header className="topbar">
-        <div className="project-switch-wrap"><button className="project-switcher" onClick={() => setProjectMenu((value) => !value)}><span className="project-stamp">{data.project.code.slice(0, 2)}</span><span><small>CURRENT PRODUCTION</small><strong>{data.project.name}</strong></span><b>⌄</b></button>{projectMenu && <div className="project-menu"><p>PRODUCTIONS</p>{data.projects.map((project) => <button className={project.id === data.project.id ? "current" : ""} onClick={() => loadProject(project.id)} key={project.id}><span><strong>{project.name}</strong><small>{project.client} · {project.code}</small></span>{project.id !== data.project.id && <b>→</b>}</button>)}{(user.accessLevel === "admin" || user.accessLevel === "full") && <button className="new-project" onClick={() => { setProjectMenu(false); setComposer("project"); }}>＋ NEW PRODUCTION</button>}</div>}</div>
+        <div className="project-switch-wrap"><button className="project-switcher" onClick={() => setProjectMenu((value) => !value)}><span className="project-stamp">{data.project.code.slice(0, 2)}</span><span><small>CURRENT PRODUCTION</small><strong>{data.project.name}</strong></span><b>⌄</b></button>{projectMenu && <div className="project-menu"><p>PRODUCTIONS</p>{data.projects.map((project) => <button className={project.id === data.project.id ? "current" : ""} onClick={() => { rememberProject(project.id); markProjectRoute(project.id); void loadProject(project.id); }} key={project.id}><span><strong>{project.name}</strong><small>{project.client} · {project.code}</small></span>{project.id !== data.project.id && <b>→</b>}</button>)}{(user.accessLevel === "admin" || user.accessLevel === "full") && <button className="new-project" onClick={() => { setProjectMenu(false); setComposer("project"); }}>＋ NEW PRODUCTION</button>}</div>}</div>
         <label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this production" aria-label="Search this production" /><kbd>⌘ K</kbd></label>
         <div className="top-actions"><span className="sync-state">● SAVED</span><button className="theme-button" onClick={toggleTheme} aria-label={`Use ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "◐" : "◑"}</button><button className="present-button" onClick={() => { openView("client"); setClientPreview(true); }}>CLIENT VIEW ↗</button></div>
       </header>
@@ -245,7 +315,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         {error && <div className="inline-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
         {active === "control" && <ControlRoom data={data} totals={totals} openView={openView} openComposer={setComposer} mutate={mutate} />}
         {active === "budget" && <ReferenceBudgetView data={data} lines={lines} totals={totals} expenses={data.expenses} openComposer={() => setComposer("budget")} mutate={mutate} auditBudget={auditBudget} auditing={auditing} />}
-        {active === "reconcile" && <ReconcileView expenses={expenses} files={data.files} lines={data.budgetLines} openBackup={() => filePicker.current?.click()} mutate={mutate} />}
+        {active === "reconcile" && <ReconcileView project={data.project} expenses={expenses} files={data.files} lines={data.budgetLines} openBackup={() => filePicker.current?.click()} mutate={mutate} />}
         {active === "backup" && <BackupView files={data.files} expenses={data.expenses} lines={data.budgetLines} audits={data.audits} filePicker={filePicker} uploadBackup={uploadBackup} chooseBackup={chooseBackup} removeFile={removeFile} mutate={mutate} auditBudget={auditBudget} saving={saving} auditing={auditing} />}
         {active === "cc" && <CCView expenses={expenses} lines={data.budgetLines} ccPicker={ccPicker} importStatement={importStatement} openComposer={setComposer} mutate={mutate} />}
         {active === "production" && <RecordView title="Production Sheet" kicker="Operations · Live list" copy="Open items, vendor decisions, and wrap-book notes in one shared sheet." records={moduleRows(data, "production")} columns={["section", "item", "owner", "status"]} open={() => setComposer("production")} remove={(id) => mutate({ action: "delete_module_record", id }, "Production item removed")} />}
@@ -253,8 +323,8 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         {active === "travel" && <TravelDeskView project={data.project} records={moduleRows(data, "travel")} crew={moduleRows(data, "crew")} exports={moduleRows(data, "travel_export")} picker={travelPicker} open={() => setComposer("travel")} mutate={mutate} />}
         {active === "schedule" && <ScheduleView records={moduleRows(data, "schedule")} open={() => setComposer("schedule")} mutate={mutate} publish={() => mutate({ action: "publish_client_item", kind: "Schedule", label: `${data.project.name} · Shooting Schedule` }, "Schedule pushed to client portal")} />}
         {active === "callsheet" && <CallSheet project={data.project} crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} travel={moduleRows(data, "travel")} locations={data.locations} publish={() => mutate({ action: "publish_client_item", kind: "Call Sheet", label: `${data.project.name} · Day 01 Call Sheet` }, "Call sheet pushed to client portal")} />}
-        {active === "locations" && <ReferenceLocationsView project={data.project} locations={locations} open={() => setComposer("location")} mutate={mutate} />}
-        {active === "client" && <ReferenceClientPortal data={data} totals={totals} preview={clientPreview} setPreview={setClientPreview} publish={mutate} />}
+        {active === "locations" && <ReferenceLocationsView project={data.project} projects={data.projects} locations={locations} switchProject={openProjectLocations} openGlobalLibrary={() => openAccountHome("locations")} open={() => setComposer("location")} mutate={mutate} />}
+        {active === "client" && <ReferenceClientPortal data={data} totals={totals} preview={clientPreview} setPreview={setClientPreview} publish={mutate} theme={theme} toggleTheme={toggleTheme} onAccountHome={() => openAccountHome()} />}
         {active === "settings" && <ProjectSettings project={data.project} saving={saving} mutate={mutate} />}
         {active === "activity" && <ActivityView activities={data.activities} />}
       </div>
@@ -265,6 +335,126 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     {userControls && <UserControlsDrawer user={user} project={data.project} projects={data.projects} theme={theme} compactRows={compactRows} reduceMotion={reduceMotion} close={() => setUserControls(false)} setTheme={setThemeMode} setCompactRows={setCompactMode} setReduceMotion={setMotionMode} logOut={logOut} externalLogout={!localPreview && !user.credential} />}
     {toast && <div className="toast"><span>✓</span>{toast}</div>}
   </main>;
+}
+
+function downloadAccountCsv(filename: string, rows: (string | number)[][]) {
+  const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a"); link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+}
+
+const accountLabels: Record<AccountSection, string> = { home: "Portal Home", jobs: "Jobs", locations: "Location Library", templates: "Templates & Guides" };
+
+function PortalAccountWorkspace({ section, setSection, data, user, openProject, openProjectLocations, createProject, manageUsers, updateProjectStatus, theme, toggleTheme, logOut }: { section: AccountSection; setSection: (section: AccountSection) => void; data: PortalData; user: NonNullable<User>; openProject: (projectId: string) => Promise<void>; openProjectLocations: (projectId: string) => Promise<void>; createProject: () => void; manageUsers: () => void; updateProjectStatus: (projectId: string, status: string) => Promise<boolean>; theme: "light" | "dark"; toggleTheme: () => void; logOut: () => Promise<void> }) {
+  const isAdmin = user.accessLevel === "admin";
+  const today = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date());
+  const navigation: { id: AccountSection; label: string }[] = [{ id: "home", label: "Portal Home" }, { id: "jobs", label: "Jobs" }, { id: "locations", label: "Location Library" }, { id: "templates", label: "Templates & Guides" }];
+  return <main className="portal-shell account-portal-shell">
+    <aside className="sidebar account-sidebar"><button className="brand" onClick={() => setSection("home")}><img src="/bill-inc.png" alt="BILL, INC." /></button><div className="side-project"><span>GLOBAL WORKSPACE</span><strong>{isAdmin ? "Company Administration" : "Production Portal"}</strong><small>{data.projects.length} ACCESSIBLE JOB{data.projects.length === 1 ? "" : "S"}</small></div><nav aria-label="Portal workspace"><div className="nav-group"><p>Portal</p>{navigation.map((item) => <button className={section === item.id ? "nav-item active" : "nav-item"} onClick={() => setSection(item.id)} key={item.id}>{item.label}</button>)}</div>{isAdmin && <div className="nav-group"><p>Administration</p><button className="nav-item" onClick={createProject}>＋ Create Job</button><button className="nav-item" onClick={manageUsers}>Users &amp; Access</button></div>}</nav><div className="sidebar-bottom account-sidebar-bottom"><button className="side-user" onClick={manageUsers}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{isAdmin ? "Administrator" : user.email}</small></span><b>→</b></button><button className="account-side-logout" onClick={() => void logOut()}>LOG OUT →</button></div></aside>
+    <section className="workspace"><header className="topbar account-topbar"><div className="account-topbar-title"><small>BILL, INC. PORTAL</small><strong>{accountLabels[section]}</strong></div><div className="account-topbar-date"><span>{today}</span><b>{user.email}</b></div><div className="top-actions"><span className="sync-state">● SECURE</span><button className="theme-button" onClick={toggleTheme} aria-label={`Use ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "◐" : "◑"}</button></div></header><div className="account-mobile-nav">{navigation.map((item) => <button className={section === item.id ? "active" : ""} onClick={() => setSection(item.id)} key={item.id}>{item.label}</button>)}</div><div className="content account-portal-content">
+      {section === "home" && <PortalAccountHome data={data} user={user} setSection={setSection} createProject={createProject} manageUsers={manageUsers} />}
+      {section === "jobs" && <AccountJobs data={data} user={user} openProject={openProject} createProject={createProject} updateProjectStatus={updateProjectStatus} />}
+      {section === "locations" && <GlobalLocationLibrary data={data} openProjectLocations={openProjectLocations} />}
+      {section === "templates" && <TemplatesGuidesView user={user} />}
+    </div></section>
+  </main>;
+}
+
+function PortalAccountHome({ data, user, setSection, createProject, manageUsers }: { data: PortalData; user: NonNullable<User>; setSection: (section: AccountSection) => void; createProject: () => void; manageUsers: () => void }) {
+  const isAdmin = user.accessLevel === "admin";
+  const summaries = data.projectSummaries || data.projects.map((project) => ({ ...project, estimate: 0, committed: 0, actual: 0, backupCount: 0, missingBackupCount: 0 }));
+  const activeJobs = summaries.filter((project) => project.status.toLowerCase() !== "closed");
+  const totals = summaries.reduce((result, project) => ({ estimate: result.estimate + project.estimate, committed: result.committed + project.committed, actual: result.actual + project.actual, missing: result.missing + project.missingBackupCount }), { estimate: 0, committed: 0, actual: 0, missing: 0 });
+  const projectedProfit = totals.estimate - totals.committed;
+  const actualGross = totals.estimate - totals.actual;
+  const today = new Intl.DateTimeFormat("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date());
+  const exportPnl = () => downloadAccountCsv("bill-inc-profit-loss.csv", [["Job", "Client", "Job number", "Status", "Approved estimate / revenue", "Committed costs", "Projected gross profit", "Actual backed costs", "Actual gross position"], ...summaries.map((project) => [project.name, project.client, project.code, project.status, project.estimate, project.committed, project.estimate - project.committed, project.actual, project.estimate - project.actual]), ["TOTAL", "", "", "", totals.estimate, totals.committed, projectedProfit, totals.actual, actualGross]]);
+  const exportAccounting = () => downloadAccountCsv("bill-inc-accounting-report.csv", [["Job", "Client", "Job number", "Committed costs", "Backed actuals", "Unbacked commitments", "Backup documents", "Missing backup items"], ...summaries.map((project) => [project.name, project.client, project.code, project.committed, project.actual, Math.max(0, project.committed - project.actual), project.backupCount, project.missingBackupCount]), ["TOTAL", "", "", totals.committed, totals.actual, Math.max(0, totals.committed - totals.actual), summaries.reduce((sum, project) => sum + project.backupCount, 0), totals.missing]]);
+
+  return <section className={`account-home ${isAdmin ? "admin" : "team"}`}>
+    <section className="account-home-intro"><p>{today}</p><h1>WELCOME, {user.name.toUpperCase()}</h1><span>{isAdmin ? "Company-wide production, access and accounting controls." : "Your assigned productions and shared company resources."}</span></section>
+
+    <section className="account-destination-grid"><button onClick={() => setSection("jobs")}><span>01 · PRODUCTIONS</span><h2>JOBS</h2><p>Open the productions you can access, organized by year.</p><footer><b>{summaries.length} JOB{summaries.length === 1 ? "" : "S"}</b><strong>→</strong></footer></button><button onClick={() => setSection("locations")}><span>02 · COMPANY RESOURCE</span><h2>LOCATION<br />LIBRARY</h2><p>Search every saved location across your accessible productions.</p><footer><b>{data.globalLocations.filter((location) => !location.deleted_at).length} LOCATIONS</b><strong>→</strong></footer></button><button onClick={() => setSection("templates")}><span>03 · COMPANY RESOURCE</span><h2>TEMPLATES<br />&amp; GUIDES</h2><p>Production forms, working templates and company guidance.</p><footer><b>SHARED LIBRARY</b><strong>→</strong></footer></button></section>
+
+    {isAdmin && <>
+      <section className="admin-command-bar"><div><span>COMPANY CONTROL</span><strong>{activeJobs.length} ACTIVE JOB{activeJobs.length === 1 ? "" : "S"}</strong></div><button onClick={() => setSection("jobs")}>VIEW ALL JOBS →</button><button onClick={createProject}>＋ CREATE JOB</button><button onClick={manageUsers}>＋ ADD / MANAGE USERS</button></section>
+      <section className="account-financial-metrics"><article><span>APPROVED ESTIMATES</span><strong>{money.format(totals.estimate)}</strong><small>Company-wide booked revenue</small></article><article><span>COMMITTED COSTS</span><strong>{money.format(totals.committed)}</strong><small>Working vendor commitments</small></article><article><span>PROJECTED GROSS PROFIT</span><strong>{money.format(projectedProfit)}</strong><small>Estimate less commitments</small></article><article><span>BACKED ACTUALS</span><strong>{money.format(totals.actual)}</strong><small>{totals.missing} items missing backup</small></article></section>
+      <section className="account-reports"><header><div><span>COMPANY REPORTING</span><h2>PROFIT, LOSS + ACCOUNTING</h2></div><div><button onClick={exportPnl}>EXPORT P&amp;L CSV ↓</button><button onClick={exportAccounting}>EXPORT ACCOUNTING CSV ↓</button></div></header><div className="account-report-grid"><article><span>PROJECTED PROFIT</span><strong>{money.format(projectedProfit)}</strong><small>{totals.estimate ? Math.round(projectedProfit / totals.estimate * 100) : 0}% projected gross margin</small></article><article><span>ACTUAL GROSS POSITION</span><strong>{money.format(actualGross)}</strong><small>Estimate less uploaded backup</small></article><article><span>UNBACKED COMMITMENTS</span><strong>{money.format(Math.max(0, totals.committed - totals.actual))}</strong><small>{totals.missing} working costs need documentation</small></article></div></section>
+    </>}
+
+  </section>;
+}
+
+function globalLocationImage(location: GlobalLocation) {
+  if (Array.isArray(location.gallery) && location.gallery[0]) return location.gallery[0];
+  if (typeof location.gallery === "string" && location.gallery.trim()) {
+    try { const parsed = JSON.parse(location.gallery); if (Array.isArray(parsed) && typeof parsed[0] === "string") return parsed[0]; } catch { const first = location.gallery.split("|").find(Boolean); if (first) return first; }
+  }
+  return location.image_url || "";
+}
+
+function GlobalLocationLibrary({ data, openProjectLocations }: { data: PortalData; openProjectLocations: (projectId: string) => Promise<void> }) {
+  const [query, setQuery] = useState("");
+  const [projectId, setProjectId] = useState("all");
+  const [category, setCategory] = useState("all");
+  const locations = (data.globalLocations || []).filter((location) => !location.deleted_at);
+  const categories = [...new Set(locations.map((location) => location.category || "Uncategorized"))].sort();
+  const filtered = locations.filter((location) => projectId === "all" || location.project_id === projectId).filter((location) => category === "all" || (location.category || "Uncategorized") === category).filter((location) => `${location.name} ${location.city} ${location.address || ""} ${location.tags || ""} ${location.project_name} ${location.project_client} ${location.project_code}`.toLowerCase().includes(query.toLowerCase()));
+
+  return <section className="account-home global-location-library">
+    <section className="global-location-hero"><div><p>COMPANY · GLOBAL LIBRARY</p><h1>LOCATION<br />LIBRARY</h1><span>Search every location across the productions you can access, then open it inside the correct job.</span></div><aside><strong>{locations.length}</strong><span>LOCATIONS ACROSS {data.projects.length} JOB{data.projects.length === 1 ? "" : "S"}</span></aside></section>
+    <section className="global-location-tools"><label>SEARCH<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, city, address, tag, client or job…" /></label><label>JOB<select value={projectId} onChange={(event) => setProjectId(event.target.value)}><option value="all">ALL ACCESSIBLE JOBS</option>{data.projects.map((project) => <option value={project.id} key={project.id}>{project.code} · {project.name}</option>)}</select></label><label>CATEGORY<select value={category} onChange={(event) => setCategory(event.target.value)}><option value="all">ALL CATEGORIES</option>{categories.map((value) => <option value={value} key={value}>{value.toUpperCase()}</option>)}</select></label><button onClick={() => { setQuery(""); setProjectId("all"); setCategory("all"); }}>CLEAR FILTERS</button></section>
+    <section className="global-location-results"><header><span>ACCESSIBLE LOCATIONS</span><b>{filtered.length} RESULT{filtered.length === 1 ? "" : "S"}</b></header><div>{filtered.map((location, index) => <article key={`${location.project_id}-${location.id}`}><button className="global-location-photo" onClick={() => void openProjectLocations(location.project_id)} style={{ backgroundImage: globalLocationImage(location) ? `url(${globalLocationImage(location)})` : undefined }}><span>{pad(index + 1)}</span><b>{titleCase(location.status)}</b></button><div><p>{location.city} · {location.category || "Uncategorized"}</p><h2>{location.name}</h2><span>{location.address || location.blurb || location.note || "Location details pending"}</span><dl><div><dt>JOB</dt><dd>{location.project_name}</dd></div><div><dt>CLIENT</dt><dd>{location.project_client}</dd></div><div><dt>JOB NO.</dt><dd>{location.project_code}</dd></div></dl><button onClick={() => void openProjectLocations(location.project_id)}>OPEN JOB LOCATIONS →</button></div></article>)}</div>{filtered.length === 0 && <div className="global-location-empty"><strong>NO LOCATIONS FOUND</strong><span>Adjust the search or open a job to add its first location.</span></div>}</section>
+  </section>;
+}
+
+function AccountJobs({ data, user, openProject, createProject, updateProjectStatus }: { data: PortalData; user: NonNullable<User>; openProject: (projectId: string) => Promise<void>; createProject: () => void; updateProjectStatus: (projectId: string, status: string) => Promise<boolean> }) {
+  const isAdmin = user.accessLevel === "admin";
+  const summaries = data.projectSummaries || data.projects.map((project) => ({ ...project, estimate: 0, committed: 0, actual: 0, backupCount: 0, missingBackupCount: 0 }));
+  const years = [...new Set(summaries.map((project) => project.shoot_start?.slice(0, 4) || "Unscheduled"))].sort((a, b) => b.localeCompare(a));
+  return <section className="account-home account-jobs-page"><header className="account-page-heading"><div><p>PORTAL · PRODUCTIONS</p><h1>JOBS</h1><span>{isAdmin ? "Every company production, organized by shoot year." : "The productions assigned to your account, organized by shoot year."}</span></div>{isAdmin && <button onClick={createProject}>＋ CREATE JOB</button>}</header><section className="account-job-library"><header><div><span>{isAdmin ? "ALL PRODUCTIONS" : "YOUR PRODUCTIONS"}</span><h2>JOBS BY YEAR</h2></div><b>{summaries.length} JOB{summaries.length === 1 ? "" : "S"}</b></header>{years.map((year) => <section className="account-year" key={year}><h3>{year}</h3><div>{summaries.filter((project) => (project.shoot_start?.slice(0, 4) || "Unscheduled") === year).map((project) => { const closed = project.status.toLowerCase() === "closed"; return <article className={closed ? "closed" : ""} key={project.id}><button className="account-job-open" onClick={() => void openProject(project.id)}><span>{project.code}</span><h4>{project.name}</h4><p>{project.client}</p><div><span>{project.shoot_start ? `${formatDate(project.shoot_start)}—${formatDate(project.shoot_end)}` : "DATES TBD"}</span><b>{project.status}</b></div><footer>{isAdmin ? <><span>EST. {compactMoney.format(project.estimate)}</span><span>COSTS {compactMoney.format(project.committed)}</span></> : <span>OPEN PROJECT</span>}<strong>→</strong></footer></button>{isAdmin && <button className="account-job-status" onClick={() => { if (closed || window.confirm(`Close ${project.name}? It will remain available in the ${year} archive.`)) void updateProjectStatus(project.id, closed ? "Planning" : "Closed"); }}>{closed ? "REOPEN JOB" : "CLOSE JOB"}</button>}</article>; })}</div></section>)}</section></section>;
+}
+
+function libraryFileSize(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function TemplatesGuidesView({ user }: { user: NonNullable<User> }) {
+  const [files, setFiles] = useState<LibraryFile[]>([]);
+  const [category, setCategory] = useState("Templates");
+  const [filter, setFilter] = useState("all");
+  const [description, setDescription] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const picker = useRef<HTMLInputElement>(null);
+  const isAdmin = user.accessLevel === "admin";
+  const categories = ["Templates", "Production Guides", "Forms", "Reference"];
+  const visible = files.filter((file) => filter === "all" || file.category === filter);
+  useEffect(() => { void loadLibrary(); }, []);
+  async function loadLibrary() {
+    setLoading(true); setMessage("");
+    try { const response = await fetch("/api/library-files"); const payload = await response.json() as { files?: LibraryFile[]; error?: string }; if (!response.ok) throw new Error(payload.error || "The library could not be loaded."); setFiles(payload.files || []); }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : "The library could not be loaded."); }
+    finally { setLoading(false); }
+  }
+  async function uploadFile(file?: File) {
+    if (!file) return;
+    setSaving(true); setMessage("");
+    try { const form = new FormData(); form.set("file", file); form.set("category", category); form.set("description", description); const response = await fetch("/api/library-files", { method: "POST", body: form }); const payload = await response.json() as { files?: LibraryFile[]; error?: string }; if (!response.ok) throw new Error(payload.error || "The file could not be uploaded."); setFiles(payload.files || []); setDescription(""); setMessage(`${file.name} added to ${category}.`); }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : "The file could not be uploaded."); }
+    finally { setSaving(false); }
+  }
+  async function removeFile(file: LibraryFile) {
+    if (!window.confirm(`Remove ${file.filename} from the company library?`)) return;
+    setSaving(true); setMessage("");
+    try { const response = await fetch("/api/library-files", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: file.id }) }); const payload = await response.json() as { files?: LibraryFile[]; error?: string }; if (!response.ok) throw new Error(payload.error || "The file could not be removed."); setFiles(payload.files || []); setMessage(`${file.filename} removed.`); }
+    catch (reason) { setMessage(reason instanceof Error ? reason.message : "The file could not be removed."); }
+    finally { setSaving(false); }
+  }
+  return <section className="account-home templates-guides-page"><header className="account-page-heading"><div><p>PORTAL · COMPANY RESOURCES</p><h1>TEMPLATES<br />&amp; GUIDES</h1><span>Production templates, forms, references and working guides in one shared library.</span></div><aside><strong>{files.length}</strong><span>SHARED FILE{files.length === 1 ? "" : "S"}</span></aside></header>{isAdmin && <section className="template-upload-panel" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); void uploadFile(event.dataTransfer.files[0]); }}><div><span>ADMIN UPLOAD</span><h2>DROP A TEMPLATE OR GUIDE</h2><p>PDF, Word, Excel, image and other production files up to 20 MB.</p></div><label>CATEGORY<select value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((value) => <option value={value} key={value}>{value.toUpperCase()}</option>)}</select></label><label>DESCRIPTION<input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this file is used for…" /></label><button disabled={saving} onClick={() => picker.current?.click()}>{saving ? "UPLOADING…" : "＋ CHOOSE FILE"}</button><input ref={picker} hidden type="file" onChange={(event) => { void uploadFile(event.target.files?.[0]); event.target.value = ""; }} /></section>}<section className="template-library"><header><div><span>LIBRARY</span><h2>FILES</h2></div><nav><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>ALL <b>{files.length}</b></button>{categories.map((value) => <button className={filter === value ? "active" : ""} onClick={() => setFilter(value)} key={value}>{value.toUpperCase()} <b>{files.filter((file) => file.category === value).length}</b></button>)}</nav></header>{message && <div className="template-message">{message}</div>}{loading ? <div className="template-empty">OPENING COMPANY LIBRARY…</div> : visible.length ? <div className="template-file-grid">{visible.map((file, index) => <article key={file.id}><span>{pad(index + 1)}</span><div><p>{file.category}</p><h3>{file.filename}</h3><small>{file.description || "Company production resource"}</small></div><dl><div><dt>TYPE</dt><dd>{file.filename.split(".").pop()?.toUpperCase() || "FILE"}</dd></div><div><dt>SIZE</dt><dd>{libraryFileSize(file.size)}</dd></div><div><dt>ADDED BY</dt><dd>{file.uploaded_by}</dd></div></dl><footer><button onClick={() => window.open(`/api/library-files?key=${encodeURIComponent(file.object_key)}`, "_blank")}>VIEW / DOWNLOAD ↗</button>{isAdmin && <button disabled={saving} onClick={() => void removeFile(file)}>REMOVE</button>}</footer></article>)}</div> : <div className="template-empty"><strong>NO FILES YET</strong><span>{isAdmin ? "Drop the first template or production guide above." : "An administrator has not added any files to this section yet."}</span></div>}</section></section>;
 }
 
 type AccessUser = { id: string; username: string; displayName: string; accessLevel: Exclude<PortalAccessLevel, "client">; active: boolean; projectIds: string[]; updatedAt: string };
@@ -374,7 +564,7 @@ function BudgetLineRow({ line, baseline, committed, actual, mutate }: { line: Bu
   return <div className={`work-row ${change ? "changed-row" : ""}`}><span><input value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })} onBlur={commit} aria-label="Budget category" /><input value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} onBlur={commit} aria-label="Budget line description" /></span><span className="money-input"><b>$</b><input type="number" value={draft.estimate} onChange={(event) => setDraft({ ...draft, estimate: event.target.value })} onBlur={commit} aria-label="Estimate" /></span><span className={change && change < 0 ? "negative" : change ? "positive" : "muted"}>{change === null ? "NEW" : change === 0 ? "—" : signedMoney(change)}</span><span>{money.format(committed)}</span><span>{money.format(actual)}</span><span className={Number(draft.estimate) - committed < 0 ? "negative" : ""}>{money.format(Number(draft.estimate) - committed)}</span></div>;
 }
 
-function ReconcileView({ expenses, files, lines, openBackup, mutate }: { expenses: Expense[]; files: FileAsset[]; lines: BudgetLine[]; openBackup: () => void; mutate: Mutate }) {
+function ReconcileView({ project, expenses, files, lines, openBackup, mutate }: { project: Project; expenses: Expense[]; files: FileAsset[]; lines: BudgetLine[]; openBackup: () => void; mutate: Mutate }) {
   const codedLines = codedBudgetLines(lines);
   const lookup = new Map(codedLines.map((entry) => [entry.line.id, entry]));
   const [lineFilter, setLineFilter] = useState("all");
@@ -384,10 +574,14 @@ function ReconcileView({ expenses, files, lines, openBackup, mutate }: { expense
   const actual = backupFiles.reduce((sum, file) => sum + Number(file.amount || 0), 0);
   const working = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0);
   const estimate = lines.reduce((sum, line) => sum + Number(line.estimate), 0);
+  const remaining = estimate - working;
+  const openCommitment = working - actual;
+  const percent = estimate > 0 ? Math.round((working / estimate) * 100) : 0;
   const sections = [...new Set(codedLines.map((entry) => entry.section))];
   const visibleExpenses = lineFilter === "all" ? expenses : expenses.filter((expense) => expense.budget_line_id === lineFilter);
   const editingLine = codedLines.find(({ line }) => line.id === editingLineId);
-  return <Page className="reconcile-page" kicker="Finance · Internal cost report" title="Reconciliation" copy="Edit working commitments by vendor. Actuals are calculated only from uploaded receipts and invoices." actions={<button className="black-button" onClick={openBackup}>＋ UPLOAD BACKUP</button>}>
+  const publishReconciliation = () => mutate({ action: "publish_client_item", kind: "Reconciliation", label: `${project.name} · Top-Line Reconciliation`, estimate, working, actual, remaining, openCommitment, percent }, "Reconciliation snapshot pushed to the client portal");
+  return <Page className="reconcile-page" kicker="Finance · Internal cost report" title="Reconciliation" copy="Edit working commitments by vendor. Actuals are calculated only from uploaded receipts and invoices." actions={<><button className="outline-button" onClick={publishReconciliation}>PUSH TO CLIENT PORTAL →</button><button className="black-button" onClick={openBackup}>＋ UPLOAD BACKUP</button></>}>
     <div className="dense-metrics"><Metric label="Estimate" value={money.format(estimate)} note="Approved budget" /><Metric label="Working" value={money.format(working)} note={`${expenses.length} vendor allocation${expenses.length === 1 ? "" : "s"}`} /><Metric label="Actual" value={money.format(actual)} note={`${backupFiles.length} linked document${backupFiles.length === 1 ? "" : "s"}`} /><Metric label="Remaining" value={money.format(estimate - working)} note="Estimate less working" /></div>
     <div className="reconcile-definition-bar"><span><b>WORKING</b> Your editable vendor commitments and forecasts.</span><span><b>ACTUAL</b> Amounts supported by uploaded backup.</span><span><b>NO BACKUP</b> A working cost without a receipt or invoice yet.</span></div>
     <div className="reconcile-caption"><span>COST REPORT BY BUDGET LINE</span><b>CLICK A WORKING NUMBER TO EDIT ITS VENDORS</b></div>
@@ -601,9 +795,9 @@ function ComposerModal({ type, lines, saving, close, submit }: { type: Exclude<C
     {type === "schedule" && <><Field label="Time" name="time" type="time" /><Field label="Event" name="event" /><Field label="Location" name="location" /></>}
     {type === "travel" && <><label>Booking type<select name="type" value={travelType} onChange={(event) => setTravelType(event.target.value)}><option>Flight</option><option>Hotel</option><option>Car</option><option>Transfer</option></select></label><Field label="Traveler" name="traveler" />
       {travelType === "Flight" && <><div className="field-pair"><Field label="Airline" name="provider" /><Field label="Flight number" name="flightNumber" /></div><div className="field-pair"><Field label="Origin" name="from" /><Field label="Destination" name="to" /></div><div className="field-pair"><Field label="Departure date" name="departDate" type="date" /><Field label="Departure time" name="departTime" /></div><div className="field-pair"><Field label="Arrival date" name="arriveDate" type="date" /><Field label="Arrival time" name="arriveTime" /></div></>}
-      {travelType === "Hotel" && <><Field label="Hotel" name="hotel" /><div className="field-pair"><Field label="Team" name="team" required={false} /><Field label="Role" name="role" required={false} /></div><div className="field-pair"><Field label="Room type" name="roomType" placeholder="Standard King" /><Field label="Charges" name="payment" placeholder="Room + tax" /></div><div className="field-pair"><Field label="Pay by" name="payBy" placeholder="Production" /><Field label="Nightly rate" name="rate" type="number" required={false} /></div><div className="field-pair"><Field label="Check in" name="checkIn" type="date" /><Field label="Check out" name="checkOut" type="date" /></div></>}
+      {travelType === "Hotel" && <><Field label="Hotel" name="hotel" /><div className="field-pair"><Field label="Team" name="team" required={false} /><Field label="Role" name="role" required={false} /></div><div className="field-pair"><Field label="Room type" name="roomType" placeholder="Standard Room" /><Field label="Payment responsibility" name="paymentResponsibility" placeholder="Production / Guest / Client" /></div><Field label="Charges covered" name="charges" placeholder="Room & Tax / All Charges" /><div className="field-pair"><Field label="Check in" name="checkIn" type="date" /><Field label="Check out" name="checkOut" type="date" /></div><Field label="Confirmation #" name="confirmation" required={false} /><Field label="Hotel notes" name="notes" placeholder="Move hotel / accessibility / special request" required={false} /></>}
       {["Car", "Transfer"].includes(travelType) && <><Field label="Car company / provider" name="provider" /><div className="field-pair"><Field label="Pickup" name="from" /><Field label="Drop-off" name="to" /></div><div className="field-pair"><Field label="Pickup date" name="departDate" type="date" /><Field label="Pickup time" name="departTime" /></div><Field label="Vehicle" name="vehicle" placeholder="Sedan / SUV / Van" /><Field label="Dispatch notes" name="notes" required={false} /></>}
-      <div className="field-pair"><Field label="Confirmation" name="confirmation" required={false} /><Field label="Status" name="status" placeholder="Confirmed" /></div></>}
+      {travelType === "Hotel" ? <Field label="Status" name="status" placeholder="Confirmed" /> : <div className="field-pair"><Field label="Confirmation" name="confirmation" required={false} /><Field label="Status" name="status" placeholder="Confirmed" /></div>}</>}
     <footer><button type="button" onClick={close}>CANCEL</button><button className="black-button" disabled={saving}>{saving ? "SAVING…" : "SAVE"}</button></footer></form></div>;
 }
 

@@ -1,4 +1,4 @@
-import { primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const projects = sqliteTable("projects", {
   id: text("id").primaryKey(),
@@ -79,6 +79,13 @@ export const locations = sqliteTable("locations", {
   gallery: text("gallery").notNull().default("[]"),
   deletedAt: text("deleted_at").notNull().default(""),
   clientVisible: real("client_visible").notNull().default(1),
+  address: text("address").notNull().default(""),
+  latitude: real("latitude"),
+  longitude: real("longitude"),
+  mapsUrl: text("maps_url").notNull().default(""),
+  streetViewUrl: text("street_view_url").notNull().default(""),
+  mapX: real("map_x").notNull().default(-1),
+  mapY: real("map_y").notNull().default(-1),
 });
 
 export const activities = sqliteTable("activities", {
@@ -116,6 +123,18 @@ export const fileAssets = sqliteTable("file_assets", {
   memo: text("memo").notNull().default(""),
   createdAt: text("created_at").notNull(),
 });
+
+export const libraryFiles = sqliteTable("library_files", {
+  id: text("id").primaryKey(),
+  objectKey: text("object_key").notNull(),
+  filename: text("filename").notNull(),
+  contentType: text("content_type").notNull(),
+  size: real("size").notNull(),
+  category: text("category").notNull(),
+  description: text("description").notNull().default(""),
+  uploadedBy: text("uploaded_by").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [uniqueIndex("library_files_object_key_idx").on(table.objectKey), index("idx_library_files_category_created").on(table.category, table.createdAt)]);
 
 export const budgetAudits = sqliteTable("budget_audits", {
   id: text("id").primaryKey(),

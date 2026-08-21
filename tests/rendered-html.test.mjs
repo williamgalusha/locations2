@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the BILL, INC. production control room instead of starter preview UI", async () => {
-  const [page, layout, portal, travelView, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute] = await Promise.all([
+  const [page, layout, portal, travelView, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute, libraryRoute] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("app/production-portal.tsx", root), "utf8"),
@@ -16,6 +16,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
     readFile(new URL("app/api/credential-login/route.ts", root), "utf8"),
     readFile(new URL("app/credential-auth.ts", root), "utf8"),
     readFile(new URL("app/api/access/route.ts", root), "utf8"),
+    readFile(new URL("app/api/library-files/route.ts", root), "utf8"),
   ]);
 
   assert.match(page, /verifyPortalSession/);
@@ -23,11 +24,21 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(layout, /BILL, INC\. — Production Control/);
   assert.match(layout, /\/og\.png/);
   assert.match(portal, /CONTROL ROOM/);
+  assert.doesNotMatch(portal, /portal-loading|OPENING PRODUCTION WORKSPACE/);
+  assert.match(portal, /const loaded = await loadProject\(\)/);
+  assert.match(portal, /if \(!data && !error\) return null/);
   assert.doesNotMatch(portal, /className="brand"[^\n]*PRODUCTION CONTROL/);
   assert.match(portal, /Production Sheet/);
   assert.match(portal, /Headcount/);
   assert.match(portal, /Client Portal/);
   assert.match(portal, /Project Settings/);
+  assert.match(portal, /PortalAccountWorkspace/);
+  assert.match(portal, /WELCOME,/);
+  assert.match(portal, /Jobs by year/i);
+  assert.match(portal, /Location Library/i);
+  assert.match(portal, /Templates & Guides/i);
+  assert.match(portal, /TemplatesGuidesView/);
+  assert.match(portal, /\/api\/library-files/);
   assert.match(portal, /SAVE PROJECT SETTINGS/);
   assert.match(portal, /update_project_details/);
   assert.match(portal, /PROJECT SUMMARY \/ SCOPE/);
@@ -37,6 +48,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /ACTUAL.*Amounts supported by uploaded backup/);
   assert.match(portal, /SAVE WORKING COSTS/);
   assert.match(portal, /ADD ANOTHER VENDOR/);
+  assert.match(portal, /publishReconciliation/);
+  assert.match(portal, /kind: "Reconciliation"/);
+  assert.match(portal, /Reconciliation snapshot pushed to the client portal/);
   assert.match(portal, /BACKUP LINKED/);
   assert.match(portal, /NO BACKUP/);
   assert.match(portal, /actual = data\?\.files\.filter/);
@@ -52,11 +66,23 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /AIRPORT ARRIVAL = 2 HOURS BEFORE FLIGHT/);
   assert.match(portal, /CHECK DRIVE \+ CALCULATE/);
   assert.match(portal, /ADD TRANSFER TO CHART/);
+  assert.match(portal, /Payment responsibility/);
+  assert.match(portal, /Charges covered/);
+  assert.match(portal, /Hotel notes/);
   for (const feature of ["TRAVEL DESK", "FLIGHTS", "HOTEL CHARTS", "CAR BOOKINGS", "TRAVEL MEMOS", "EXPORT MEMO PDF", "EXCEL ↓", "PDF ↓"]) assert.match(travelView, new RegExp(feature));
   assert.match(travelView, /datalist id="travel-memo-names"/);
   assert.match(travelView, /PUSH TO CLIENT →/);
   assert.match(travelView, /kind: "Travel Memo"/);
   assert.match(travelView, /MASTER HOTEL ROOMING LIST/);
+  for (const field of ["PAYMENT RESPONSIBILITY", "CHARGES", "CONFIRMATION #", "TOTAL NIGHTS", "TOTAL QUANTITY REQUIRED", "TOTAL ROOMS REQUIRED"]) assert.match(travelView, new RegExp(field));
+  assert.match(travelView, /roomingDateHeader/);
+  assert.match(travelView, /room-night/);
+  assert.match(travelView, /checkout/);
+  assert.match(travelView, /paymentResponsibility/);
+  assert.match(travelView, /xSplit="\$\{freezeColumns\}" ySplit="6"/);
+  assert.match(travelView, /mergeCells count="4"/);
+  assert.doesNotMatch(travelView, /"PROJECTED"/);
+  assert.doesNotMatch(travelView, /Nightly rate/);
   assert.match(travelView, /CHANGES SINCE LAST EXPORT/);
   assert.match(travelView, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
   assert.match(travelView, /module: "travel_export"/);
@@ -67,7 +93,14 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /budget-audit-result/);
   assert.match(referenceUi, /DOCUMENT REVIEW/);
   assert.match(referenceUi, /client-budget-subnav/);
-  assert.match(referenceUi, /PUBLISHED TRAVEL/);
+  assert.match(referenceUi, /PUBLISHED COST REPORT/);
+  assert.match(referenceUi, /PUBLISHED SNAPSHOT/);
+  assert.match(referenceUi, /remains unchanged until production publishes a new reconciliation/);
+  assert.doesNotMatch(referenceUi, /ClientReconciliation\(\{ expenses/);
+  assert.doesNotMatch(referenceUi, /PUBLISHED TRAVEL/);
+  assert.doesNotMatch(referenceUi, /Open the individual itineraries/);
+  assert.doesNotMatch(referenceUi, /traveler’s memo will appear here/);
+  assert.match(css, /\.original-client-portal \.client-page-title \{ font-size: 38px; font-weight: 900; \}/);
   assert.match(referenceUi, /DOWNLOAD MEMO PDF/);
   assert.match(referenceUi, /\{ page: "Travel"/);
   assert.doesNotMatch(referenceUi, /\{ page: "Reconciliation"/);
@@ -113,6 +146,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /ALL LINES/);
   assert.match(referenceUi, /CHANGES ONLY/);
   assert.match(referenceUi, /PUBLISHED BUDGETS/);
+  assert.doesNotMatch(referenceUi, /CLIENT-READY VERSION/);
   assert.match(referenceUi, /COMPARE TWO VERSIONS/);
   assert.match(referenceUi, /VIEW BUDGET/);
   assert.match(referenceUi, /DOWNLOAD BUDGET PDF/);
@@ -120,13 +154,29 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /getPublishedBudgetVersions/);
   assert.match(referenceUi, /versionId: clientShareVersion/);
   assert.match(css, /client-budget-library/);
-  assert.match(css, /client-budget-document/);
+  assert.match(css, /client-reconciliation-metrics/);
+  assert.match(referenceUi, /function ClientBudgetDocument[\s\S]*className="budget-document" data-budget-document/);
+  assert.doesNotMatch(referenceUi, /className="client-budget-document"/);
+  assert.match(css, /data-print-surface="client-budget"[^}]*\.budget-document/);
   assert.match(referenceUi, /IMPORT FOLDERS/);
   assert.match(referenceUi, /RECENTLY DELETED/);
   assert.match(referenceUi, /PRESENTATION/);
   assert.match(referenceUi, /data-deck-frame/);
-  assert.match(referenceUi, /DARK MODE/);
+  assert.match(referenceUi, /PRODUCTION VIEW ↙/);
+  assert.match(referenceUi, /client-theme-\$\{theme\}/);
+  assert.match(referenceUi, /className="theme-button"/);
+  assert.doesNotMatch(referenceUi, /clientTheme === "light" \? "DARK MODE" : "LIGHT MODE"/);
   assert.match(portal, /DARK MODE/);
+  assert.match(portal, /theme=\{theme\} toggleTheme=\{toggleTheme\}/);
+  assert.match(portal, /LAST_PROJECT_TTL = 24 \* 60 \* 60 \* 1000/);
+  assert.match(portal, /useState\(Boolean\(initialUser\)\)/);
+  assert.match(portal, /rememberProject\(projectId\)/);
+  assert.match(portal, /new URLSearchParams\(window\.location\.hash/);
+  assert.match(portal, /requestedProject !== recent\.projectId/);
+  assert.match(portal, /function openAccountHome/);
+  assert.match(portal, /window\.history\.replaceState\(null, "", `\$\{window\.location\.pathname\}\$\{window\.location\.search\}`\)/);
+  assert.match(portal, /type="button" className="brand" onClick=\{\(\) => openAccountHome\(\)\}/);
+  assert.match(portal, /onAccountHome=\{\(\) =>/);
   assert.match(portal, /USER CONTROLS/);
   assert.match(portal, /ADMIN ACCESS/);
   assert.match(portal, /ADD USER/);
@@ -137,6 +187,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /bill-reduce-motion/);
   assert.doesNotMatch(portal, /side-user-menu/);
   assert.match(css, /user-controls-drawer/);
+  assert.match(css, /account-portal-shell/);
+  assert.match(css, /account-destination-grid/);
+  assert.match(css, /template-upload-panel/);
   assert.match(css, /data-density="compact"/);
   assert.match(css, /data-reduce-motion="true"/);
   assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.sidebar[^}]*background:\s*#e7e7e4[^}]*color:\s*#111/);
@@ -162,6 +215,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(accessRoute, /save_user/);
   assert.match(accessRoute, /set_user_active/);
   assert.match(accessRoute, /Administrator access is required/);
+  assert.match(libraryRoute, /authorization\.isAdmin/);
+  assert.match(libraryRoute, /bucket\(\)\.put/);
+  assert.match(libraryRoute, /bucket\(\)\.delete/);
   assert.match(referenceUi, /CLIENT LOGIN/);
   assert.match(referenceUi, /set_client_credential/);
   assert.match(referenceUi, /disable_client_credential/);
@@ -175,7 +231,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
 });
 
 test("includes durable records, file storage, budget history, and synchronized production actions", async () => {
-  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, auditMigration, authMigration, route, fileRoute, auditRoute, travelTimeRoute, schema] = await Promise.all([
+  const [hosting, initialMigration, expandedMigration, budgetMigration, restoredMigration, auditMigration, authMigration, libraryMigration, libraryIndexMigration, route, fileRoute, auditRoute, travelTimeRoute, schema] = await Promise.all([
     readFile(new URL(".openai/hosting.json", root), "utf8"),
     readFile(new URL("drizzle/0000_cute_genesis.sql", root), "utf8"),
     readFile(new URL("drizzle/0001_typical_sabra.sql", root), "utf8"),
@@ -183,6 +239,8 @@ test("includes durable records, file storage, budget history, and synchronized p
     readFile(new URL("drizzle/0003_overconfident_northstar.sql", root), "utf8"),
     readFile(new URL("drizzle/0004_concerned_siren.sql", root), "utf8"),
     readFile(new URL("drizzle/0005_nappy_cannonball.sql", root), "utf8"),
+    readFile(new URL("drizzle/0008_productive_reaper.sql", root), "utf8"),
+    readFile(new URL("drizzle/0009_spicy_fixer.sql", root), "utf8"),
     readFile(new URL("app/api/portal/route.ts", root), "utf8"),
     readFile(new URL("app/api/files/route.ts", root), "utf8"),
     readFile(new URL("app/api/audit/route.ts", root), "utf8"),
@@ -191,6 +249,8 @@ test("includes durable records, file storage, budget history, and synchronized p
   ]);
 
   assert.deepEqual(JSON.parse(hosting), { project_id: "appgprj_6a85bb83fa3481918167c327c66526d4", d1: "DB", r2: "FILES" });
+  assert.match(route, /reconciliationSnapshot/);
+  assert.match(route, /openCommitment/);
   for (const table of ["projects", "budget_lines", "expenses", "locations", "activities"]) {
     assert.ok(initialMigration.includes("CREATE TABLE `" + table + "`"));
   }
@@ -203,6 +263,8 @@ test("includes durable records, file storage, budget history, and synchronized p
   for (const column of ["budget_line_id", "expense_id", "vendor", "amount", "spend_date", "memo"]) assert.match(auditMigration, new RegExp(column));
   assert.match(authMigration, /CREATE TABLE `portal_users`/);
   assert.match(authMigration, /CREATE TABLE `portal_user_projects`/);
+  assert.match(libraryMigration, /CREATE TABLE `library_files`/);
+  assert.match(libraryIndexMigration, /idx_library_files_category_created/);
   for (const action of ["create_project", "update_project_details", "set_client_credential", "disable_client_credential", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "save_working_allocations", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
     assert.match(route, new RegExp(action));
   }
@@ -214,6 +276,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(fileRoute, /isBackup \? budgetLineId : ""/);
   assert.match(fileRoute, /DELETE FROM expenses WHERE id = \?/);
   assert.match(schema, /budgetAudits/);
+  assert.match(schema, /libraryFiles/);
   assert.match(schema, /expenseId:\s*text\("expense_id"\)/);
   assert.match(auditRoute, /https:\/\/api\.openai\.com\/v1\/responses/);
   assert.match(auditRoute, /OPENAI_API_KEY/);
