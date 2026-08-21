@@ -252,6 +252,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .page-head h1 { margin: 0; font-size: clamp(34px, 4vw, 52px); font-weight: 900; letter-spacing: -.065em; line-height: .86; text-transform: uppercase; }
 .page-head > div > span { display: block; margin-top: 11px; color: var(--muted); font-size: 8px; }
 .page-head > div:last-child { display: flex; gap: 6px; }
+.project-settings-form { margin-top: 14px; border: 1px solid var(--line-strong); background: var(--panel); }
+.project-settings-form > section { display: grid; grid-template-columns: 230px minmax(0, 1fr); border-bottom: 1px solid var(--line-strong); }
+.project-settings-form > section > header { display: flex; gap: 13px; padding: 16px; border-right: 1px solid var(--line); background: var(--wash); }
+.project-settings-form > section > header > span { color: var(--quiet); font-size: 6px; font-weight: 900; }
+.project-settings-form > section > header h2 { margin: 0 0 7px; font-size: 10px; letter-spacing: -.02em; }
+.project-settings-form > section > header p { margin: 0; color: var(--muted); font-size: 6px; line-height: 1.45; }
+.project-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.project-settings-grid label { display: grid; gap: 6px; min-width: 0; padding: 11px 13px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); color: var(--quiet); font-size: 5px; font-weight: 900; letter-spacing: .09em; }
+.project-settings-grid label:nth-child(even), .project-settings-grid label.settings-wide { border-right: 0; }
+.project-settings-grid label:nth-last-child(-n + 2) { border-bottom: 0; }
+.project-settings-grid label.settings-wide { grid-column: 1 / -1; border-bottom: 0; }
+.project-settings-grid input, .project-settings-grid select, .project-settings-grid textarea { width: 100%; min-width: 0; height: 32px; padding: 0; border: 0; border-bottom: 1px solid var(--line-strong); border-radius: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 8px; font-weight: 600; letter-spacing: 0; }
+.project-settings-grid textarea { min-height: 68px; padding: 7px 0; resize: vertical; line-height: 1.45; }
+.project-settings-grid input:focus, .project-settings-grid select:focus, .project-settings-grid textarea:focus { box-shadow: inset 0 -2px var(--ink); }
+.project-settings-form > footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 62px; padding: 10px 13px; }
+.project-settings-form > footer span, .project-settings-form > footer strong { display: block; }
+.project-settings-form > footer span { margin-bottom: 5px; color: var(--quiet); font-size: 5px; font-weight: 900; letter-spacing: .09em; }
+.project-settings-form > footer strong { font-size: 8px; }
+.project-settings-form > footer button { min-width: 170px; }
 .dense-metrics { display: grid; grid-template-columns: repeat(4, 1fr); margin: 12px 0; border: 1px solid var(--line); }
 .metric { min-height: 82px; padding: 13px; border-left: 1px solid var(--line); }
 .metric:first-child { border-left: 0; }
@@ -1218,6 +1237,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .mobile-nav button.active { background: var(--inverse); color: var(--inverse-ink); }
   .content { padding: 18px 12px 36px; }
   .control-title, .page-head { align-items: start; flex-direction: column; }
+  .project-settings-form > section { grid-template-columns: 1fr; }
+  .project-settings-form > section > header { border-right: 0; border-bottom: 1px solid var(--line); }
+  .project-settings-grid { grid-template-columns: 1fr; }
+  .project-settings-grid label, .project-settings-grid label:nth-child(even) { border-right: 0; border-bottom: 1px solid var(--line); }
+  .project-settings-grid label:nth-last-child(-n + 2) { border-bottom: 1px solid var(--line); }
+  .project-settings-grid label:last-child { border-bottom: 0; }
+  .project-settings-form > footer { align-items: stretch; flex-direction: column; }
+  .project-settings-form > footer button { width: 100%; }
   .control-title h1 { font-size: 48px; }
   .control-actions { width: 100%; justify-content: space-between; }
   .control-strip { grid-template-columns: 1fr 1fr; }

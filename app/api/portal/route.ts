@@ -295,6 +295,22 @@ export async function POST(request: Request) {
         db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "V1 · Initial estimate", "draft", "[]", now),
       ]);
       await logActivity(projectId, "project", `${name} created`, actor);
+    } else if (action === "update_project_details") {
+      const name = textValue(body.name, "Untitled production");
+      const client = textValue(body.client, "Client TBD");
+      const code = textValue(body.code, "JOB-TBD");
+      const status = textValue(body.status, "Planning");
+      const shootStart = textValue(body.shootStart, now.slice(0, 10));
+      const shootEnd = textValue(body.shootEnd, shootStart);
+      if (shootEnd < shootStart) throw new Error("Shoot end must be on or after shoot start.");
+      const requestedCurrency = textValue(body.currency, "USD").toUpperCase();
+      const currency = /^[A-Z]{3}$/.test(requestedCurrency) ? requestedCurrency : "USD";
+      await db.prepare(`UPDATE projects SET
+        name = ?, client = ?, code = ?, status = ?, shoot_start = ?, shoot_end = ?, currency = ?,
+        contact = ?, contact_email = ?, billing_address = ?, po_no = ?, budget_notes = ?, budget_changes = ?,
+        markup_pct = ?, insurance_pct = ? WHERE id = ?`)
+        .bind(name, client, code, status, shootStart, shootEnd, currency, textValue(body.contact), textValue(body.contactEmail), textValue(body.billingAddress), textValue(body.poNo), textValue(body.budgetNotes), textValue(body.budgetChanges), Math.max(0, numberValue(body.markupPct)), Math.max(0, numberValue(body.insurancePct)), projectId).run();
+      await logActivity(projectId, "project", `${name} project settings updated`, actor);
     } else if (action === "set_client_credential") {
       if (authorization.role !== "production") return Response.json({ error: "Only production users can manage client credentials." }, { status: 403 });
       const username = normalizePortalUsername(textValue(body.username));
