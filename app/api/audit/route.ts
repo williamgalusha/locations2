@@ -9,6 +9,13 @@ type ExpenseRow = { id: string; budget_line_id: string; vendor: string; amount: 
 type FileRow = { id: string; object_key: string; filename: string; content_type: string; size: number; status: string; budget_line_id: string; expense_id: string; vendor: string; amount: number; spend_date: string; memo: string };
 type InputContent = { type: "input_text"; text: string } | { type: "input_image"; image_url: string; detail: "auto" } | { type: "input_file"; filename: string; file_data: string };
 
+class OpenAiAuditError extends Error {
+  constructor(readonly status: number) {
+    super(`OpenAI audit request failed (${status}).`);
+    this.name = "OpenAiAuditError";
+  }
+}
+
 function database() {
   if (!env.DB) throw new Error("The production database is not connected.");
   return env.DB;
@@ -44,6 +51,16 @@ function outputText(payload: Record<string, unknown>) {
     for (const part of content) if (part && typeof part === "object" && typeof (part as { text?: unknown }).text === "string") return String((part as { text: string }).text);
   }
   return "";
+}
+
+function safeOpenAiFailure(error: unknown) {
+  if (!(error instanceof OpenAiAuditError)) return "OpenAI could not be reached from the audit service.";
+  if (error.status === 400) return "OpenAI did not accept the configured model or audit request (HTTP 400).";
+  if (error.status === 401) return "OpenAI rejected the configured API key (HTTP 401).";
+  if (error.status === 403) return "The OpenAI project cannot access the configured model (HTTP 403).";
+  if (error.status === 429) return "OpenAI rate limits or available project quota blocked the request (HTTP 429).";
+  if (error.status >= 500) return `OpenAI is temporarily unavailable (HTTP ${error.status}).`;
+  return `OpenAI returned an unexpected response (HTTP ${error.status}).`;
 }
 
 function parseModelNotes(text: string): { summary?: string; notes: AuditNote[] } {
@@ -122,7 +139,7 @@ async function openAiAudit(project: Record<string, unknown>, lines: BudgetLineRo
     headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ model: environment().OPENAI_AUDIT_MODEL || "gpt-5.6-terra", reasoning: { effort: "low" }, text: { verbosity: "low" }, max_output_tokens: 2200, store: false, input: [{ role: "user", content }] }),
   });
-  if (!response.ok) throw new Error(`OpenAI audit request failed (${response.status}).`);
+  if (!response.ok) throw new OpenAiAuditError(response.status);
   return parseModelNotes(outputText(await response.json() as Record<string, unknown>));
 }
 
@@ -145,7 +162,12 @@ export async function POST(request: Request) {
     if (!project) return Response.json({ error: "Production not found." }, { status: 404 });
     const baseline = deterministicAudit(lineResult.results, expenseResult.results, fileResult.results);
     let enhanced: Awaited<ReturnType<typeof openAiAudit>> = null;
-    try { enhanced = await openAiAudit(project, lineResult.results, expenseResult.results, fileResult.results, baseline); } catch { enhanced = null; }
+    let aiFailure: string | null = null;
+    try { enhanced = await openAiAudit(project, lineResult.results, expenseResult.results, fileResult.results, baseline); }
+    catch (error) {
+      aiFailure = safeOpenAiFailure(error);
+      console.warn(JSON.stringify({ event: "openai_audit_fallback", projectId, status: error instanceof OpenAiAuditError ? error.status : null }));
+    }
     const source = enhanced ? "openai" : "rules";
     const notes = enhanced?.notes.length ? [...baseline, ...enhanced.notes].filter((note, index, all) => all.findIndex((candidate) => candidate.title === note.title && candidate.detail === note.detail) === index) : baseline;
     const critical = notes.filter((note) => note.severity === "critical").length;
@@ -159,7 +181,7 @@ export async function POST(request: Request) {
       db.prepare("INSERT INTO budget_audits VALUES (?, ?, ?, 'complete', ?, ?, ?)").bind(id, projectId, source, summary, JSON.stringify(notes), createdAt),
       db.prepare("INSERT INTO activities VALUES (?, ?, 'audit', ?, ?, ?)").bind(crypto.randomUUID(), projectId, `Budget audit completed · ${critical} critical · ${review} review`, `${authorization.displayName} · ${source === "openai" ? "OpenAI audit" : "Audit engine"}`, createdAt),
     ]);
-    return Response.json({ audit: { id, source, status: "complete", summary, notes, created_at: createdAt }, aiConfigured: Boolean(environment().OPENAI_API_KEY), documentsReviewed: source === "openai" ? fileResult.results.length : 0 });
+    return Response.json({ audit: { id, source, status: "complete", summary, notes, created_at: createdAt }, aiConfigured: Boolean(environment().OPENAI_API_KEY), aiFailure, documentsReviewed: source === "openai" ? fileResult.results.length : 0 });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Budget audit failed." }, { status: 500 });
   }
