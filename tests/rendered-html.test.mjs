@@ -5,11 +5,12 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 
 test("ships the BILL, INC. production control room instead of starter preview UI", async () => {
-  const [page, layout, portal, travelView, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute, libraryRoute] = await Promise.all([
+  const [page, layout, portal, travelView, optionsWorkspace, referenceUi, css, packageJson, credentialRoute, credentialAuth, accessRoute, libraryRoute] = await Promise.all([
     readFile(new URL("app/page.tsx", root), "utf8"),
     readFile(new URL("app/layout.tsx", root), "utf8"),
     readFile(new URL("app/production-portal.tsx", root), "utf8"),
     readFile(new URL("app/travel-view.tsx", root), "utf8"),
+    readFile(new URL("app/options-workspace.tsx", root), "utf8"),
     readFile(new URL("app/reference-ui.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("package.json", root), "utf8"),
@@ -31,6 +32,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /Production Sheet/);
   assert.match(portal, /Headcount/);
   assert.match(portal, /Client Portal/);
+  assert.match(portal, /Casting/);
+  assert.match(portal, /Art Buying/);
   assert.match(portal, /Project Settings/);
   assert.match(portal, /PortalAccountWorkspace/);
   assert.match(portal, /WELCOME,/);
@@ -162,6 +165,17 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(referenceUi, /VIEW BUDGET/);
   assert.match(referenceUi, /DOWNLOAD BUDGET PDF/);
   assert.match(referenceUi, /DOWNLOAD COMPARISON PDF/);
+  assert.match(referenceUi, /COMMENT ON BUDGET/);
+  assert.match(referenceUi, /add_budget_comment/);
+  assert.match(referenceUi, /budget-comment-inbox/);
+  for (const pageName of ["Casting", "Art Buying"]) assert.match(referenceUi, new RegExp(`page: "${pageName}"`));
+  for (const sectionName of ["Photographer", "Director", "DP", "Set Design", "Hair Stylist", "Makeup Artist", "Manicurist", "BTS"]) assert.match(optionsWorkspace, new RegExp(sectionName));
+  for (const feature of ["PUSH FULL DECK", "PUSH SECTION", "VIEW DECK", "EXPORT PDF", "VIEW PORTFOLIO / REEL", "ClientOptionsLibrary"]) assert.match(optionsWorkspace, new RegExp(feature));
+  assert.match(optionsWorkspace, /action: "update_module_record"/);
+  assert.match(optionsWorkspace, /snapshot: JSON\.stringify/);
+  assert.match(css, /options-workspace/);
+  assert.match(css, /options-deck-page/);
+  assert.match(css, /budget-comment-composer/);
   assert.match(referenceUi, /getPublishedBudgetVersions/);
   assert.match(referenceUi, /versionId: clientShareVersion/);
   assert.match(css, /client-budget-library/);
@@ -280,7 +294,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(authMigration, /CREATE TABLE `portal_user_projects`/);
   assert.match(libraryMigration, /CREATE TABLE `library_files`/);
   assert.match(libraryIndexMigration, /idx_library_files_category_created/);
-  for (const action of ["create_project", "update_project_details", "set_client_credential", "disable_client_credential", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "save_working_allocations", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
+  for (const action of ["create_project", "update_project_details", "set_client_credential", "disable_client_credential", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "save_working_allocations", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_budget_comment", "resolve_budget_comment", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
     assert.match(route, new RegExp(action));
   }
   assert.match(fileRoute, /bucket\(\)\.put/);
@@ -308,6 +322,11 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(route, /traveler: textValue\(body\.traveler\)/);
   assert.match(route, /parser === "document" \? "Document" : "Text"/);
   assert.match(route, /"travel_export"/);
+  assert.match(route, /"casting"/);
+  assert.match(route, /"art_buying"/);
+  assert.match(route, /"budget_comment"/);
+  assert.match(route, /snapshot = typeof body\.snapshot/);
+  assert.match(route, /\["update_location_status", "add_budget_comment"\]/);
   await access(new URL("dist/server/index.js", root));
   await access(new URL("public/og.png", root));
 });
