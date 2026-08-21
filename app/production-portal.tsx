@@ -23,7 +23,7 @@ export type PortalData = { projects: Project[]; project: Project; budgetLines: B
 type View = "control" | "budget" | "reconcile" | "backup" | "cc" | "production" | "crew" | "schedule" | "travel" | "callsheet" | "locations" | "client" | "activity";
 type Composer = "budget" | "expense" | "location" | "project" | "production" | "crew" | "schedule" | "travel" | null;
 export type User = { name: string; email: string; credential?: boolean; role?: PortalRole; accessLevel?: PortalAccessLevel; projectIds?: string[] } | null;
-export type Mutate = (payload: Record<string, unknown>, success: string) => Promise<void>;
+export type Mutate = (payload: Record<string, unknown>, success: string) => Promise<boolean>;
 
 const groups: { label: string; items: { id: View; label: string }[] }[] = [
   { label: "Workspace", items: [{ id: "control", label: "Control Room" }] },
@@ -125,14 +125,15 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
   }, [data]);
 
   async function mutate(payload: Record<string, unknown>, success: string) {
-    if (!data && payload.action !== "create_project") return;
+    if (!data && payload.action !== "create_project") return false;
     setSaving(true); setError("");
     try {
       const response = await fetch("/api/portal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...payload, projectId: data?.project.id }) });
       const next = await response.json() as PortalData & { error?: string };
       if (!response.ok) throw new Error(next.error ?? "That change could not be saved.");
       setData(next); setComposer(null); setToast(success); window.setTimeout(() => setToast(""), 2600);
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "That change could not be saved."); }
+      return true;
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "That change could not be saved."); return false; }
     finally { setSaving(false); }
   }
 
@@ -417,11 +418,28 @@ function HeadcountView({ crew, schedule, open, mutate }: { crew: ModuleRecord[];
 
 function TravelView({ records, picker, open, mutate }: { records: ModuleRecord[]; picker: RefObject<HTMLInputElement | null>; open: () => void; mutate: Mutate }) {
   const [autoHotel, setAutoHotel] = useState(true); const [autoCar, setAutoCar] = useState(true); const [traveler, setTraveler] = useState(""); const [pasted, setPasted] = useState(""); const [drag, setDrag] = useState(false);
+  const [importing, setImporting] = useState(false); const [importError, setImportError] = useState("");
   const [tripType, setTripType] = useState<PickupPlan["tripType"]>("to_airport"); const [routeTraveler, setRouteTraveler] = useState(""); const [origin, setOrigin] = useState(""); const [destination, setDestination] = useState(""); const [eventDateTime, setEventDateTime] = useState(""); const [bufferMinutes, setBufferMinutes] = useState("15"); const [fallbackMinutes, setFallbackMinutes] = useState("60"); const [planning, setPlanning] = useState(false); const [planError, setPlanError] = useState(""); const [pickupPlan, setPickupPlan] = useState<PickupPlan | null>(null);
   const dateTimeLabel = (value: string) => new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(value));
   const timeLabel = (value: string) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(value));
   const localInputValue = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-  async function importFile(file: File) { const bytes = await file.arrayBuffer(); const text = file.type === "application/pdf" ? new TextDecoder("latin1").decode(bytes) : new TextDecoder().decode(bytes); await mutate({ action: "import_travel_reservation", filename: file.name, text, traveler, autoHotel, autoCar }, "Reservation parsed and travel chart updated"); }
+  async function importFile(file: File) {
+    setImporting(true); setImportError("");
+    try {
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const fileData = isPdf ? await fileToDataUrl(file) : "";
+      const text = isPdf ? "" : await file.text();
+      await mutate({ action: "import_travel_reservation", filename: file.name, fileData, text, traveler, autoHotel, autoCar }, "Reservation parsed and travel chart updated");
+    } catch (reason) { setImportError(reason instanceof Error ? reason.message : "That reservation could not be read."); }
+    finally { setImporting(false); }
+  }
+  async function importPasted() {
+    if (!pasted.trim()) return;
+    setImporting(true); setImportError("");
+    const saved = await mutate({ action: "import_travel_reservation", filename: "Pasted reservation", text: pasted, traveler, autoHotel, autoCar }, "Reservation parsed and travel chart updated");
+    if (saved) setPasted("");
+    setImporting(false);
+  }
   async function onFile(event: ChangeEvent<HTMLInputElement>) { const file = event.target.files?.[0]; if (file) await importFile(file); event.target.value = ""; }
   async function onDrop(event: DragEvent<HTMLButtonElement>) { event.preventDefault(); setDrag(false); const file = event.dataTransfer.files?.[0]; if (file) await importFile(file); }
   async function calculatePickup(event: FormEvent<HTMLFormElement>) {
@@ -449,7 +467,8 @@ function TravelView({ records, picker, open, mutate }: { records: ModuleRecord[]
   }
   return <Page kicker="Logistics · Synced reservations" title="Travel Charts" copy="Drop a confirmation, then calculate traffic-aware pickups that feed the call sheet." actions={<button className="black-button" onClick={open}>＋ MANUAL ROW</button>}>
     <input ref={picker} type="file" accept=".pdf,.eml,.txt,.html,message/rfc822,application/pdf" hidden onChange={onFile} />
-    <div className="travel-import"><button className={drag ? "drop active" : "drop"} onClick={() => picker.current?.click()} onDragOver={(event) => { event.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}><strong>DROP TRAVEL RESERVATION</strong><span>PDF, airline email, itinerary or confirmation text</span></button><div className="travel-options"><label>TRAVELER<input value={traveler} onChange={(event) => setTraveler(event.target.value)} placeholder="Name from headcount" /></label><label className="check"><input type="checkbox" checked={autoHotel} onChange={(event) => setAutoHotel(event.target.checked)} />Suggest hotel from flight dates</label><label className="check"><input type="checkbox" checked={autoCar} onChange={(event) => setAutoCar(event.target.checked)} />Suggest arrival car · route below</label></div><div className="paste-reservation"><textarea value={pasted} onChange={(event) => setPasted(event.target.value)} placeholder="Or paste a confirmation email here…" /><button disabled={!pasted.trim()} onClick={async () => { await mutate({ action: "import_travel_reservation", filename: "Pasted reservation", text: pasted, traveler, autoHotel, autoCar }, "Reservation parsed and travel chart updated"); setPasted(""); }}>PARSE RESERVATION →</button></div></div>
+    <div className="travel-import"><button className={drag ? "drop active" : "drop"} disabled={importing} onClick={() => picker.current?.click()} onDragOver={(event) => { event.preventDefault(); setDrag(true); }} onDragLeave={() => setDrag(false)} onDrop={onDrop}><strong>{importing ? "READING BOOKING…" : "DROP TRAVEL RESERVATION"}</strong><span>PDF, airline email, itinerary or confirmation text</span></button><div className="travel-options"><label>TRAVELER<input value={traveler} onChange={(event) => setTraveler(event.target.value)} placeholder="Name from headcount" /></label><label className="check"><input type="checkbox" checked={autoHotel} onChange={(event) => setAutoHotel(event.target.checked)} />Suggest hotel from flight dates</label><label className="check"><input type="checkbox" checked={autoCar} onChange={(event) => setAutoCar(event.target.checked)} />Suggest arrival car · route below</label></div><div className="paste-reservation"><textarea value={pasted} onChange={(event) => setPasted(event.target.value)} placeholder="Or paste a confirmation email here…" /><button disabled={importing || !pasted.trim()} onClick={importPasted}>{importing ? "PARSING…" : "PARSE RESERVATION →"}</button></div></div>
+    {importError && <div className="pickup-plan-error">{importError}</div>}
     <section className="pickup-planner" id="pickup-planner"><header><div><span>GROUND TRANSPORT · ROUTE PLANNING</span><h2>TRAFFIC-AWARE PICKUP PLANNER</h2></div><b>✈ AIRPORT ARRIVAL = 2 HOURS BEFORE FLIGHT</b></header><form onSubmit={calculatePickup}><label>TRIP TYPE<select value={tripType} onChange={(event) => { const next = event.target.value as PickupPlan["tripType"]; setTripType(next); setBufferMinutes(next === "from_airport" ? "30" : "15"); setPickupPlan(null); }}><option value="to_airport">To airport</option><option value="from_airport">From airport</option><option value="general">General transfer</option></select></label><label>TRAVELER<input value={routeTraveler} onChange={(event) => setRouteTraveler(event.target.value)} placeholder="Name from headcount" /></label><label className="wide">ORIGIN<input value={origin} onChange={(event) => { setOrigin(event.target.value); setPickupPlan(null); }} placeholder="Hotel, home or production address" required /></label><label className="wide">DESTINATION<input value={destination} onChange={(event) => { setDestination(event.target.value); setPickupPlan(null); }} placeholder="Airport, hotel or location" required /></label><label>{tripType === "to_airport" ? "FLIGHT DEPARTURE" : tripType === "from_airport" ? "FLIGHT ARRIVAL" : "REQUIRED ARRIVAL"}<input type="datetime-local" value={eventDateTime} onChange={(event) => { setEventDateTime(event.target.value); setPickupPlan(null); }} required /></label><label>{tripType === "from_airport" ? "BAGGAGE / EXIT BUFFER" : "PRODUCTION BUFFER"}<select value={bufferMinutes} onChange={(event) => setBufferMinutes(event.target.value)}><option value="0">No buffer</option><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60">60 minutes</option></select></label><label>FALLBACK DRIVE TIME<input type="number" min="5" max="360" value={fallbackMinutes} onChange={(event) => setFallbackMinutes(event.target.value)} /><small>Used only if live routing is unavailable</small></label><button className="black-button" disabled={planning}>{planning ? "CHECKING TRAFFIC…" : "CHECK DRIVE + CALCULATE →"}</button></form>{planError && <div className="pickup-plan-error">{planError}</div>}{pickupPlan && <div className="pickup-result"><div><span>SUGGESTED PICKUP</span><strong>{dateTimeLabel(pickupPlan.pickupAt)}</strong><small>{pickupPlan.tripType === "to_airport" ? `Airport arrival ${dateTimeLabel(pickupPlan.arriveBy)}` : `Destination ETA ${dateTimeLabel(pickupPlan.estimatedDestinationAt)}`}</small></div><div><span>DRIVE</span><strong>{pickupPlan.driveMinutes} MIN</strong><small>{pickupPlan.distanceMiles == null ? "Distance pending live route" : `${pickupPlan.distanceMiles} miles`}</small></div><div><span>TRAFFIC</span><strong>{pickupPlan.source === "google_traffic" ? "LIVE" : "ESTIMATE"}</strong><small>{pickupPlan.trafficDelayMinutes == null ? "Using fallback drive time" : `+${pickupPlan.trafficDelayMinutes} min vs. clear traffic`}</small></div><div><span>BUFFER</span><strong>{pickupPlan.tripType === "to_airport" ? "2 HR + " : ""}{pickupPlan.bufferMinutes} MIN</strong><small>{pickupPlan.tripType === "to_airport" ? "Preflight arrival + production buffer" : "Loading / production buffer"}</small></div><button onClick={savePickup}>＋ ADD TRANSFER TO CHART</button></div>}</section>
     <div className="work-table travel-work"><div className="work-head"><span>Traveler</span><span>Type</span><span>Route / property</span><span>Date / time</span><span>Confirmation</span><span>Status</span><span /></div>{records.map((record) => <div className="work-row" key={record.id}><span><strong>{record.data.traveler}</strong><small>{record.data.source || "Manual entry"}</small></span><span>{record.data.type}</span><span><strong>{record.data.detail}</strong><small>{record.data.from && record.data.to ? `${record.data.from} → ${record.data.to}` : ""}</small></span><span>{record.data.timing}</span><span>{record.data.confirmation || "—"}</span><span><b className="to-code">{record.data.status}</b></span><span>{record.data.type === "Flight" && <button className="plan-flight" onClick={() => prepareFlight(record)}>PLAN</button>}<button onClick={() => mutate({ action: "delete_module_record", id: record.id }, "Travel item removed")}>×</button></span></div>)}</div>
   </Page>;
@@ -521,6 +540,13 @@ function ComposerModal({ type, lines, saving, close, submit }: { type: Exclude<C
 function Field({ label, name, type = "text", placeholder, required = true }: { label: string; name: string; type?: string; placeholder?: string; required?: boolean }) { return <label>{label}<input name={name} type={type} step={type === "number" ? "any" : undefined} placeholder={placeholder} required={required && type !== "url"} /></label>; }
 function parseCsvLine(line: string) { const result: string[] = []; let current = "", quoted = false; for (let index = 0; index < line.length; index++) { const char = line[index]; if (char === '"') { if (quoted && line[index + 1] === '"') { current += '"'; index++; } else quoted = !quoted; } else if (char === "," && !quoted) { result.push(current.trim()); current = ""; } else current += char; } result.push(current.trim()); return result; }
 function normalizeDate(value: string) { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? new Date().toISOString().slice(0, 10) : parsed.toISOString().slice(0, 10); }
+async function fileToDataUrl(file: File) {
+  if (file.size > 8 * 1024 * 1024) throw new Error("Travel documents must be 8 MB or smaller.");
+  const bytes = new Uint8Array(await file.arrayBuffer()); let binary = "";
+  for (let index = 0; index < bytes.length; index += 32768) binary += String.fromCharCode(...bytes.subarray(index, index + 32768));
+  const contentType = file.name.toLowerCase().endsWith(".pdf") ? "application/pdf" : file.type || "application/octet-stream";
+  return `data:${contentType};base64,${btoa(binary)}`;
+}
 function signedMoney(value: number) { return `${value > 0 ? "+" : value < 0 ? "−" : ""}${money.format(Math.abs(value))}`; }
 function compareBudgets(before: BudgetSnapshot[], after: BudgetSnapshot[]) { const beforeMap = new Map(before.map((line) => [line.id, line])); const afterMap = new Map(after.map((line) => [line.id, line])); return [...new Set([...beforeMap.keys(), ...afterMap.keys()])].map((key) => { const a = beforeMap.get(key), b = afterMap.get(key); const previous = Number(a?.estimate ?? 0), current = Number(b?.estimate ?? 0); return { key, category: b?.category || a?.category || "New cost", description: b?.description || a?.description || "", before: previous, after: current, delta: current - previous }; }); }
 function generalCall(schedule: ModuleRecord[]) { return [...schedule].sort((a, b) => (a.data.time || "").localeCompare(b.data.time || ""))[0]?.data.time || "06:00"; }
