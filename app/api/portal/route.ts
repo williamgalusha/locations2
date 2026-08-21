@@ -695,6 +695,15 @@ export async function POST(request: Request) {
     } else if (action === "delete_module_record") {
       await db.prepare("DELETE FROM module_records WHERE id = ? AND project_id = ?").bind(textValue(body.id), projectId).run();
       await logActivity(projectId, "project", "Production record removed", actor);
+    } else if (action === "unpublish_client_item") {
+      if (authorization.role === "client") return Response.json({ error: "Only production can remove published client items." }, { status: 403 });
+      const id = textValue(body.id);
+      const existing = await db.prepare("SELECT data FROM module_records WHERE id = ? AND project_id = ? AND module = 'client_share' LIMIT 1").bind(id, projectId).first<{ data: string }>();
+      if (!existing) throw new Error("That published item is no longer in the client portal.");
+      let label = "Published item";
+      try { label = String((JSON.parse(existing.data) as Record<string, unknown>).label || label); } catch { /* use the safe fallback label */ }
+      await db.prepare("DELETE FROM module_records WHERE id = ? AND project_id = ? AND module = 'client_share'").bind(id, projectId).run();
+      await logActivity(projectId, "client", `${label} removed from the client portal`, actor);
     } else if (action === "publish_client_item") {
       const kind = textValue(body.kind, "Document");
       const reconciliationSnapshot = kind.toLowerCase() === "reconciliation" ? {

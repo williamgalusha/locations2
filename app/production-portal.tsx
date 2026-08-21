@@ -277,6 +277,13 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     openAccountHome("locations");
   }
 
+  async function openJobLocations(projectId: string) {
+    if (data?.project.id !== projectId && !(await loadProject(projectId))) return;
+    rememberProject(projectId);
+    markProjectRoute(projectId);
+    setProjectMenu(false); setClientPreview(false); setActive("locations"); setAccountHome(false);
+  }
+
   async function logOut() {
     if (user?.credential) await fetch("/api/credential-login", { method: "DELETE" });
     setPreviewUser(null); setData(null); setEntered(false); setAccountHome(true); setAccountSection("home"); setUserControls(false);
@@ -307,8 +314,8 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     <aside className="sidebar">
       <button type="button" className="brand" onClick={() => openAccountHome()} title="Portal home"><img src="/bill-inc.png" alt="BILL, INC." /></button>
       <div className="side-project"><span>{data.project.code}</span><strong>{data.project.name}</strong><small>{data.project.client}</small></div>
-      <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => { const backed = new Set(data.files.filter((file) => file.category.toLowerCase() === "backup").map((file) => file.expense_id).filter(Boolean)); const missingBackup = data.expenses.filter((expense) => !backed.has(expense.id)).length; const comments = moduleRows(data, "budget_comment").filter((record) => record.data.status !== "resolved").length; return <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => item.id === "locations" ? void openProjectLocations(data.project.id) : openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && missingBackup > 0 && <i>{missingBackup}</i>}{item.id === "budget" && comments > 0 && <i>{comments}</i>}</button>; })}</div>)}</nav>
-      <div className="sidebar-bottom"><div className="budget-meter"><span style={{ width: `${Math.min(totals.percent, 100)}%` }} /></div><p><b>{totals.percent}% COMMITTED</b><span>{money.format(totals.remaining)} LEFT</span></p><button className="side-user" onClick={() => setUserControls(true)} aria-haspopup="dialog" aria-expanded={userControls}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>→</b></button></div>
+      <nav aria-label="Production workspace">{groups.map((group) => <div className="nav-group" key={group.label}><p>{group.label}</p>{group.items.map((item) => { const backed = new Set(data.files.filter((file) => file.category.toLowerCase() === "backup").map((file) => file.expense_id).filter(Boolean)); const missingBackup = data.expenses.filter((expense) => !backed.has(expense.id)).length; const comments = moduleRows(data, "budget_comment").filter((record) => record.data.status !== "resolved").length; return <button className={active === item.id ? "nav-item active" : "nav-item"} onClick={() => openView(item.id)} key={item.id}>{item.label}{item.id === "reconcile" && missingBackup > 0 && <i>{missingBackup}</i>}{item.id === "budget" && comments > 0 && <i>{comments}</i>}</button>; })}</div>)}</nav>
+      <div className="sidebar-bottom"><button className="side-user" onClick={() => setUserControls(true)} aria-haspopup="dialog" aria-expanded={userControls}><span>{initials(user.name)}</span><span><strong>{user.name}</strong><small>{user.email}</small></span><b>→</b></button></div>
     </aside>
 
     <section className="workspace">
@@ -317,7 +324,7 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         <label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this production" aria-label="Search this production" /><kbd>⌘ K</kbd></label>
         <div className="top-actions"><span className="sync-state">● SAVED</span><button className="theme-button" onClick={toggleTheme} aria-label={`Use ${theme === "light" ? "dark" : "light"} mode`}>{theme === "light" ? "◐" : "◑"}</button><button className="present-button" onClick={() => { openView("client"); setClientPreview(true); }}>CLIENT VIEW ↗</button></div>
       </header>
-      <div className="mobile-nav">{groups.flatMap((group) => group.items).map((item) => <button className={active === item.id ? "active" : ""} onClick={() => item.id === "locations" ? void openProjectLocations(data.project.id) : openView(item.id)} key={item.id}>{item.label}</button>)}</div>
+      <div className="mobile-nav">{groups.flatMap((group) => group.items).map((item) => <button className={active === item.id ? "active" : ""} onClick={() => openView(item.id)} key={item.id}>{item.label}</button>)}</div>
 
       <div className="content">
         {error && <div className="inline-error">{error}<button onClick={() => setError("")}>DISMISS</button></div>}
@@ -327,12 +334,13 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
         {active === "backup" && <BackupView files={data.files} expenses={data.expenses} lines={data.budgetLines} audits={data.audits} filePicker={filePicker} uploadBackup={uploadBackup} chooseBackup={chooseBackup} removeFile={removeFile} mutate={mutate} auditBudget={auditBudget} saving={saving} auditing={auditing} />}
         {active === "cc" && <CCView expenses={expenses} lines={data.budgetLines} ccPicker={ccPicker} importStatement={importStatement} openComposer={setComposer} mutate={mutate} />}
         {active === "production" && <RecordView title="Production Sheet" kicker="Operations · Live list" copy="Open items, vendor decisions, and wrap-book notes in one shared sheet." records={moduleRows(data, "production")} columns={["section", "item", "owner", "status"]} open={() => setComposer("production")} remove={(id) => mutate({ action: "delete_module_record", id }, "Production item removed")} />}
-        {active === "crew" && <HeadcountView crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} open={() => setComposer("crew")} mutate={mutate} />}
+        {active === "crew" && <HeadcountView project={data.project} crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} mutate={mutate} />}
         {active === "travel" && <TravelDeskView project={data.project} records={moduleRows(data, "travel")} crew={moduleRows(data, "crew")} exports={moduleRows(data, "travel_export")} picker={travelPicker} open={() => setComposer("travel")} mutate={mutate} />}
         {active === "schedule" && <ScheduleWorkspace key={`schedule-${data.project.id}-${moduleRows(data, "schedule_builder")[0]?.id || "new"}`} project={data.project} schedule={moduleRows(data, "schedule")} builderRecord={moduleRows(data, "schedule_builder")[0]} crew={moduleRows(data, "crew")} locations={data.locations} production={moduleRows(data, "production")} openRow={() => setComposer("schedule")} mutate={mutate} publish={() => mutate({ action: "publish_client_item", kind: "Schedule", label: `${data.project.name} · Shooting Schedule` }, "Schedule pushed to client portal")} />}
         {active === "callsheet" && <CallSheet project={data.project} crew={moduleRows(data, "crew")} schedule={moduleRows(data, "schedule")} travel={moduleRows(data, "travel")} locations={data.locations} publish={() => mutate({ action: "publish_client_item", kind: "Call Sheet", label: `${data.project.name} · Day 01 Call Sheet` }, "Call sheet pushed to client portal")} />}
         {active === "casting" && <OptionsWorkspace key={`casting-${data.project.id}-${moduleRows(data, "casting")[0]?.id || "new"}`} module="casting" title="Casting" project={data.project} record={moduleRows(data, "casting")[0]} mutate={mutate} />}
         {active === "art_buying" && <OptionsWorkspace key={`art-buying-${data.project.id}-${moduleRows(data, "art_buying")[0]?.id || "new"}`} module="art_buying" title="Art Buying" project={data.project} record={moduleRows(data, "art_buying")[0]} mutate={mutate} />}
+        {active === "locations" && <ReferenceLocationsView key={`job-locations-${data.project.id}`} project={data.project} projects={data.projects} locations={data.locations} switchProject={openJobLocations} openGlobalLibrary={openLocationLibrary} mutate={mutate} />}
         {active === "client" && <ReferenceClientPortal data={data} totals={totals} preview={clientPreview} setPreview={setClientPreview} publish={mutate} theme={theme} toggleTheme={toggleTheme} onAccountHome={() => openAccountHome()} />}
         {active === "settings" && <ProjectSettings project={data.project} saving={saving} mutate={mutate} />}
         {active === "activity" && <ActivityView activities={data.activities} />}
@@ -662,9 +670,94 @@ function RecordView({ title, kicker, copy, records, columns, open, remove }: { t
   return <Page kicker={kicker} title={title} copy={copy} actions={<button className="black-button" onClick={open}>＋ ROW</button>}><div className={`work-table generic-work cols-${columns.length}`}><div className="work-head">{columns.map((column) => <span key={column}>{titleCase(column)}</span>)}<span /></div>{records.length ? records.map((record) => <div className="work-row" key={record.id}>{columns.map((column, index) => <span key={column}>{index === 0 ? <strong>{record.data[column] || "—"}</strong> : record.data[column] || "—"}</span>)}<span><button onClick={() => remove(record.id)}>×</button></span></div>) : <Empty text="NO ROWS YET" note="Add the first production record above." />}</div></Page>;
 }
 
-function HeadcountView({ crew, schedule, open, mutate }: { crew: ModuleRecord[]; schedule: ModuleRecord[]; open: () => void; mutate: Mutate }) {
+type CrewCallDay = { date: string; time: string; location: string };
+
+function projectShootDays(project: Project) {
+  const start = new Date(`${project.shoot_start}T12:00:00`);
+  const end = new Date(`${project.shoot_end}T12:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) return [project.shoot_start].filter(Boolean);
+  const days: string[] = [];
+  for (const day = new Date(start); day <= end && days.length < 31; day.setDate(day.getDate() + 1)) days.push(`${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`);
+  return days;
+}
+
+function departmentForRole(role: string) {
+  const value = role.toLowerCase();
+  if (value.includes("producer") || value.includes("production") || value.includes(" ad") || value.startsWith("ad")) return "Production";
+  if (value.includes("camera") || value.includes("photography") || value.includes("dp")) return "Camera";
+  if (value.includes("grip") || value.includes("electric") || value.includes("gaffer")) return "Grip & Electric";
+  if (value.includes("hair") || value.includes("makeup") || value.includes("stylist") || value.includes("wardrobe")) return "Styling";
+  if (value.includes("art") || value.includes("set design") || value.includes("prop")) return "Art";
+  if (value.includes("talent") || value.includes("cast")) return "Talent";
+  return "Crew";
+}
+
+function crewCallDays(record: ModuleRecord, project: Project, general: string): CrewCallDay[] {
+  try {
+    const parsed = JSON.parse(record.data.callDays || "[]") as CrewCallDay[];
+    const valid = parsed.filter((day) => day && /^\d{4}-\d{2}-\d{2}$/.test(day.date));
+    if (valid.length) return valid.sort((a, b) => a.date.localeCompare(b.date));
+  } catch { /* fall through to legacy call fields */ }
+  const offset = Number(record.data.callOffset || defaultOffset(record.data.role || ""));
+  const time = record.data.callTime || shiftTime(general, offset);
+  const location = record.data.callLocation || "Basecamp";
+  return projectShootDays(project).map((date) => ({ date, time, location }));
+}
+
+function hasDietaryRestriction(value: string) {
+  const normalized = value.trim().toLowerCase();
+  return Boolean(normalized && !["—", "-", "none", "no", "n/a", "no restrictions"].includes(normalized));
+}
+
+function dietarySummary(records: ModuleRecord[]) {
+  const restricted = records.filter((record) => hasDietaryRestriction(record.data.dietary || ""));
+  const counts = new Map<string, number>();
+  restricted.forEach((record) => (record.data.dietary || "").split(/[,;/]/).map((item) => item.trim()).filter(Boolean).forEach((item) => counts.set(item, (counts.get(item) || 0) + 1)));
+  return { total: restricted.length, labels: [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])) };
+}
+
+function HeadcountView({ project, crew, schedule, mutate }: { project: Project; crew: ModuleRecord[]; schedule: ModuleRecord[]; mutate: Mutate }) {
   const general = generalCall(schedule);
-  return <Page kicker="Operations · Synced crew roster" title="Headcount" copy="This roster is the call sheet crew list. Call times recalculate from the schedule." actions={<button className="black-button" onClick={open}>＋ CREW</button>}><div className="sync-banner"><span>↻ LIVE SYNC</span><strong>GENERAL CALL {general}</strong><p>Move the schedule and every automatic crew call moves with it.</p></div><div className="work-table crew-work"><div className="work-head"><span>Name / contact</span><span>Role</span><span>Dietary</span><span>Call rule</span><span>Calculated call</span><span>Location</span><span /></div>{crew.map((record) => { const offset = Number(record.data.callOffset || defaultOffset(record.data.role)); return <div className="work-row" key={record.id}><span><strong>{record.data.name}</strong><small>{record.data.email || record.data.phone}</small></span><span>{record.data.role}</span><span>{record.data.dietary || "—"}</span><span>{offset === 0 ? "General call" : `${offset > 0 ? "+" : ""}${offset} min`}</span><span><strong>{shiftTime(general, offset)}</strong><small>AUTO</small></span><span>{record.data.callLocation || "Basecamp"}</span><span><button onClick={() => mutate({ action: "delete_module_record", id: record.id }, "Crew member removed")}>×</button></span></div>; })}</div></Page>;
+  const [editing, setEditing] = useState<ModuleRecord | "new" | null>(null);
+  const shootDays = projectShootDays(project);
+  const overallDietary = dietarySummary(crew);
+  return <Page kicker="Operations · Synced crew roster" title="Headcount" copy="Contact details and day-by-day calls feed directly into the call sheet." actions={<button className="black-button" onClick={() => setEditing("new")}>＋ CREW</button>}>
+    <div className="sync-banner"><span>↻ LIVE SYNC</span><strong>{shootDays.length} SHOOT DAY{shootDays.length === 1 ? "" : "S"}</strong><p>Open any crew member to edit contact details, department, call times, locations and dietary restrictions by day.</p></div>
+    <div className="crew-roster-scroll"><div className="work-table crew-work"><div className="work-head"><span>Name</span><span>Email</span><span>Phone number</span><span>Department</span><span>Role</span><span>Call time</span><span>Call location</span><span>Dietary restrictions</span><span /></div>{crew.length ? crew.map((record) => { const calls = crewCallDays(record, project, general); const first = calls[0]; return <button type="button" className="work-row crew-roster-row" onClick={() => setEditing(record)} key={record.id}><span><strong>{record.data.name || "Unnamed"}</strong></span><span>{record.data.email || "—"}</span><span>{record.data.phone || "—"}</span><span>{record.data.department || departmentForRole(record.data.role || "")}</span><span>{record.data.role || "—"}</span><span><strong>{first?.time || "—"}</strong><small>{calls.length > 1 ? `${calls.length} DAYS · OPEN` : formatDate(first?.date || project.shoot_start)}</small></span><span>{first?.location || "—"}</span><span>{hasDietaryRestriction(record.data.dietary || "") ? record.data.dietary : "None"}</span><span aria-hidden="true">→</span></button>; }) : <Empty text="NO CREW YET" note="Add the first crew member above." />}</div></div>
+    <section className="headcount-summary"><article className="headcount-total"><span>JOB HEADCOUNT</span><strong>{crew.length}</strong><p><b>{overallDietary.total}</b> with dietary restrictions</p>{overallDietary.labels.length > 0 && <div>{overallDietary.labels.map(([label, count]) => <i key={label}>{label} <b>{count}</b></i>)}</div>}</article><div className="headcount-day-totals">{shootDays.map((date, index) => { const dayCrew = crew.filter((record) => crewCallDays(record, project, general).some((call) => call.date === date)); const dietary = dietarySummary(dayCrew); return <article key={date}><span>DAY {pad(index + 1)} · {formatDate(date).toUpperCase()}</span><strong>{dayCrew.length} PEOPLE</strong><p>{dietary.total} DIETARY</p>{dietary.labels.length > 0 && <div>{dietary.labels.map(([label, count]) => <i key={label}>{label} <b>{count}</b></i>)}</div>}</article>; })}</div></section>
+    {editing && <CrewEditor project={project} general={general} record={editing === "new" ? null : editing} close={() => setEditing(null)} mutate={mutate} />}
+  </Page>;
+}
+
+function CrewEditor({ project, general, record, close, mutate }: { project: Project; general: string; record: ModuleRecord | null; close: () => void; mutate: Mutate }) {
+  const allDays = projectShootDays(project);
+  const initialCalls = record ? crewCallDays(record, project, general) : [{ date: allDays[0] || project.shoot_start, time: general, location: "Basecamp" }];
+  const [name, setName] = useState(record?.data.name || "");
+  const [email, setEmail] = useState(record?.data.email || "");
+  const [phone, setPhone] = useState(record?.data.phone || "");
+  const [department, setDepartment] = useState(record?.data.department || departmentForRole(record?.data.role || ""));
+  const [role, setRole] = useState(record?.data.role || "");
+  const [dietary, setDietary] = useState(record?.data.dietary === "—" ? "" : record?.data.dietary || "");
+  const [calls, setCalls] = useState<CrewCallDay[]>(initialCalls);
+  const [savingCrew, setSavingCrew] = useState(false);
+  const availableDays = allDays.filter((date) => !calls.some((call) => call.date === date));
+  const updateCall = (date: string, field: "time" | "location", value: string) => setCalls((current) => current.map((call) => call.date === date ? { ...call, [field]: value } : call));
+  function addDay() {
+    const date = availableDays[0];
+    if (!date) return;
+    setCalls((current) => [...current, { date, time: general, location: current[0]?.location || "Basecamp" }].sort((a, b) => a.date.localeCompare(b.date)));
+  }
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!name.trim() || !role.trim() || !calls.length) return;
+    setSavingCrew(true);
+    const first = [...calls].sort((a, b) => a.date.localeCompare(b.date))[0];
+    const data = { name: name.trim(), email: email.trim(), phone: phone.trim(), department: department.trim() || departmentForRole(role), role: role.trim(), dietary: dietary.trim() || "None", callTime: first.time, callLocation: first.location, callDays: JSON.stringify(calls) };
+    const saved = await mutate(record ? { action: "update_module_record", module: "crew", id: record.id, data } : { action: "add_module_record", module: "crew", data }, record ? `${name} updated` : `${name} added to headcount`);
+    setSavingCrew(false);
+    if (saved) close();
+  }
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}><form className="crew-editor" onSubmit={save} role="dialog" aria-modal="true" aria-label={record ? `Edit ${record.data.name}` : "Add crew member"}><header><div><p>HEADCOUNT · CREW RECORD</p><h2>{record ? `EDIT ${record.data.name}` : "ADD CREW MEMBER"}</h2></div><button type="button" onClick={close} aria-label="Close crew editor">×</button></header><section className="crew-contact-fields"><label>NAME<input value={name} onChange={(event) => setName(event.target.value)} required /></label><label>EMAIL<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label><label>PHONE NUMBER<input type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label><label>DEPARTMENT<input value={department} onChange={(event) => setDepartment(event.target.value)} placeholder="Production" /></label><label>ROLE<input value={role} onChange={(event) => setRole(event.target.value)} required /></label><label>DIETARY RESTRICTIONS<input value={dietary} onChange={(event) => setDietary(event.target.value)} placeholder="None" /></label></section><section className="crew-call-days"><header><div><span>SHOOT-DAY CALLS</span><p>Add or remove days for this person. These calls feed the call sheet.</p></div><button type="button" onClick={addDay} disabled={!availableDays.length}>＋ ADD SHOOT DAY</button></header><div className="crew-day-head"><span>DAY / DATE</span><span>CALL TIME</span><span>CALL LOCATION</span><span /></div>{calls.map((call) => <div className="crew-day-row" key={call.date}><label><span>{formatDate(call.date)}</span><select value={call.date} onChange={(event) => { const date = event.target.value; setCalls((current) => current.map((item) => item.date === call.date ? { ...item, date } : item).sort((a, b) => a.date.localeCompare(b.date))); }}>{allDays.map((date, index) => <option value={date} disabled={date !== call.date && calls.some((item) => item.date === date)} key={date}>DAY {pad(index + 1)} · {formatDate(date)}</option>)}</select></label><input type="time" value={call.time} onChange={(event) => updateCall(call.date, "time", event.target.value)} required aria-label={`Call time for ${formatDate(call.date)}`} /><input value={call.location} onChange={(event) => updateCall(call.date, "location", event.target.value)} required placeholder="Basecamp or set" aria-label={`Call location for ${formatDate(call.date)}`} /><button type="button" disabled={calls.length === 1} onClick={() => setCalls((current) => current.filter((item) => item.date !== call.date))}>REMOVE</button></div>)}</section><footer>{record ? <button type="button" className="crew-delete" onClick={async () => { if (window.confirm(`Remove ${record.data.name} from this project?`)) { const removed = await mutate({ action: "delete_module_record", id: record.id }, "Crew member removed"); if (removed) close(); } }}>REMOVE CREW MEMBER</button> : <span />}<div><button type="button" onClick={close}>CANCEL</button><button className="black-button" disabled={savingCrew}>{savingCrew ? "SAVING…" : "SAVE CREW MEMBER"}</button></div></footer></form></div>;
 }
 
 function TravelView({ records, picker, open, mutate }: { records: ModuleRecord[]; picker: RefObject<HTMLInputElement | null>; open: () => void; mutate: Mutate }) {
@@ -727,7 +820,7 @@ function TravelView({ records, picker, open, mutate }: { records: ModuleRecord[]
 
 function CallSheet({ project, crew, schedule, travel, locations, publish }: { project: Project; crew: ModuleRecord[]; schedule: ModuleRecord[]; travel: ModuleRecord[]; locations: Location[]; publish: () => void }) {
   const ordered = [...schedule].sort((a, b) => (a.data.time || "").localeCompare(b.data.time || "")); const general = generalCall(ordered); const approved = locations.find((location) => location.status === "approved");
-  return <Page kicker="Generated · No duplicate entry" title="Call Sheet" copy="Built live from headcount, schedule, travel and approved location data." actions={<><button className="outline-button" onClick={publish}>PUSH TO CLIENT →</button><button className="black-button" onClick={() => window.print()}>EXPORT PDF ↓</button></>}><div className="sync-banner"><span>✓ FULLY SYNCED</span><strong>LAST GENERATED NOW</strong><p>{crew.length} crew · {ordered.length} schedule rows · {travel.length} travel records</p></div><article className="call-sheet"><header><div><span>BILL, INC.</span><h2>{project.name}</h2><p>DAY 01 · {formatDate(project.shoot_start)} · {project.code}</p></div><div><span>GENERAL CALL</span><strong>{general}</strong><small>{approved?.name || "LOCATION TBD"}</small></div></header><section><h3>SCHEDULE</h3>{ordered.map((record) => <div className="call-row" key={record.id}><time>{record.data.time}</time><strong>{record.data.event}</strong><span>{record.data.location}</span></div>)}</section><section><h3>CREW · {crew.length}</h3>{crew.map((record) => { const call = shiftTime(general, Number(record.data.callOffset || defaultOffset(record.data.role))); return <div className="crew-row" key={record.id}><strong>{record.data.name}</strong><span>{record.data.role}</span><span>{call}</span><span>{record.data.callLocation || "Basecamp"}</span></div>; })}</section>{travel.length > 0 && <section><h3>TRAVEL / MOVEMENTS</h3>{travel.filter((record) => ["Flight", "Car", "Transfer"].includes(record.data.type)).map((record) => <div className="call-row" key={record.id}><time>{record.data.departTime || "—"}</time><strong>{record.data.traveler}</strong><span>{record.data.detail}</span></div>)}</section>}<footer><span>BILL, INC.</span><span>LIVE CALL SHEET · {project.code}</span><span>{project.client}</span></footer></article></Page>;
+  return <Page kicker="Generated · No duplicate entry" title="Call Sheet" copy="Built live from headcount, schedule, travel and approved location data." actions={<><button className="outline-button" onClick={publish}>PUSH TO CLIENT →</button><button className="black-button" onClick={() => window.print()}>EXPORT PDF ↓</button></>}><div className="sync-banner"><span>✓ FULLY SYNCED</span><strong>LAST GENERATED NOW</strong><p>{crew.length} crew · {ordered.length} schedule rows · {travel.length} travel records</p></div><article className="call-sheet"><header><div><span>BILL, INC.</span><h2>{project.name}</h2><p>DAY 01 · {formatDate(project.shoot_start)} · {project.code}</p></div><div><span>GENERAL CALL</span><strong>{general}</strong><small>{approved?.name || "LOCATION TBD"}</small></div></header><section><h3>SCHEDULE</h3>{ordered.map((record) => <div className="call-row" key={record.id}><time>{record.data.time}</time><strong>{record.data.event}</strong><span>{record.data.location}</span></div>)}</section><section><h3>CREW · {crew.length}</h3>{crew.map((record) => { const day = crewCallDays(record, project, general).find((call) => call.date === project.shoot_start) || crewCallDays(record, project, general)[0]; return <div className="crew-row" key={record.id}><strong>{record.data.name}</strong><span>{record.data.role}</span><span>{day?.time || general}</span><span>{day?.location || "Basecamp"}</span></div>; })}</section>{travel.length > 0 && <section><h3>TRAVEL / MOVEMENTS</h3>{travel.filter((record) => ["Flight", "Car", "Transfer"].includes(record.data.type)).map((record) => <div className="call-row" key={record.id}><time>{record.data.departTime || "—"}</time><strong>{record.data.traveler}</strong><span>{record.data.detail}</span></div>)}</section>}<footer><span>BILL, INC.</span><span>LIVE CALL SHEET · {project.code}</span><span>{project.client}</span></footer></article></Page>;
 }
 
 function LocationsView({ project, locations, open, mutate }: { project: Project; locations: Location[]; open: () => void; mutate: Mutate }) {
