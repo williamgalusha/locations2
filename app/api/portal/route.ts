@@ -445,28 +445,53 @@ export async function POST(request: Request) {
       const amount = numberValue(body.amount);
       const spendDate = textValue(body.spendDate, now.slice(0, 10));
       const memo = textValue(body.memo, "Production expense");
-      await db.batch([
-        db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, budgetLineId, vendor, amount, spendDate, "pending", memo, now),
-        db.prepare("UPDATE budget_lines SET actual = actual + ? WHERE id = ? AND project_id = ?").bind(amount, budgetLineId, projectId),
-      ]);
-      await logActivity(projectId, "expense", `${vendor} expense added for ${formatDollars(amount)}`, actor);
+      await db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, budgetLineId, vendor, amount, spendDate, "working", memo, now).run();
+      await logActivity(projectId, "expense", `${vendor} working cost added for ${formatDollars(amount)}`, actor);
+    } else if (action === "save_working_allocations") {
+      const budgetLineId = textValue(body.budgetLineId);
+      const rows = Array.isArray(body.rows) ? body.rows.slice(0, 100) : [];
+      const budgetLine = await db.prepare("SELECT item_code, item_name, category FROM budget_lines WHERE id = ? AND project_id = ?").bind(budgetLineId, projectId).first<{ item_code: string; item_name: string; category: string }>();
+      if (!budgetLine) throw new Error("Choose a valid budget line for these working costs.");
+      const existingResult = await db.prepare("SELECT e.id, CASE WHEN COUNT(f.id) > 0 THEN 1 ELSE 0 END AS backed FROM expenses e LEFT JOIN file_assets f ON f.expense_id = e.id AND f.project_id = e.project_id WHERE e.project_id = ? AND e.budget_line_id = ? GROUP BY e.id").bind(projectId, budgetLineId).all<{ id: string; backed: number }>();
+      const existing = new Map(existingResult.results.map((row) => [row.id, row]));
+      const submittedIds = new Set<string>();
+      const statements = [];
+      for (const item of rows) {
+        if (!item || typeof item !== "object") continue;
+        const row = item as Record<string, unknown>;
+        const id = textValue(row.id);
+        const vendor = textValue(row.vendor);
+        const amount = numberValue(row.amount);
+        const spendDate = textValue(row.spendDate, now.slice(0, 10));
+        const memo = textValue(row.memo, "Working cost");
+        if (!vendor) continue;
+        if (id) {
+          if (!existing.has(id)) throw new Error("One of these vendor allocations is no longer available. Refresh and try again.");
+          submittedIds.add(id);
+          statements.push(db.prepare("UPDATE expenses SET vendor = ?, amount = ?, spend_date = ?, memo = ? WHERE id = ? AND project_id = ? AND budget_line_id = ?").bind(vendor, amount, spendDate, memo, id, projectId, budgetLineId));
+          if (existing.get(id)?.backed) statements.push(db.prepare("UPDATE file_assets SET vendor = ?, amount = ?, spend_date = ?, memo = ? WHERE expense_id = ? AND project_id = ?").bind(vendor, amount, spendDate, memo, id, projectId));
+        } else {
+          statements.push(db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, 'working', ?, ?)").bind(crypto.randomUUID(), projectId, budgetLineId, vendor, amount, spendDate, memo, now));
+        }
+      }
+      for (const row of existingResult.results) if (!submittedIds.has(row.id) && !row.backed) statements.push(db.prepare("DELETE FROM expenses WHERE id = ? AND project_id = ?").bind(row.id, projectId));
+      statements.push(db.prepare("UPDATE budget_lines SET actual = COALESCE((SELECT SUM(amount) FROM file_assets WHERE project_id = ? AND budget_line_id = ? AND LOWER(category) = 'backup'), 0) WHERE id = ? AND project_id = ?").bind(projectId, budgetLineId, budgetLineId, projectId));
+      await db.batch(statements);
+      await logActivity(projectId, "expense", `${budgetLine.item_code || budgetLine.item_name || budgetLine.category} working costs updated`, actor);
     } else if (action === "import_expenses") {
       const rows = Array.isArray(body.rows) ? body.rows.slice(0, 150) : [];
       const fallbackLine = textValue(body.budgetLineId);
       const statements = [];
-      let total = 0;
       for (const item of rows) {
         if (!item || typeof item !== "object") continue;
         const row = item as Record<string, unknown>;
         const amount = numberValue(row.amount);
         if (!amount) continue;
-        total += amount;
-        statements.push(db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, fallbackLine, textValue(row.vendor, "Imported charge"), amount, textValue(row.date, now.slice(0, 10)), "needs_review", textValue(row.memo, "Imported from card statement"), now));
+        statements.push(db.prepare("INSERT INTO expenses VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, fallbackLine, textValue(row.vendor, "Imported charge"), amount, textValue(row.date, now.slice(0, 10)), "working", textValue(row.memo, "Imported from card statement"), now));
       }
       if (statements.length) {
-        statements.push(db.prepare("UPDATE budget_lines SET actual = actual + ? WHERE id = ? AND project_id = ?").bind(total, fallbackLine, projectId));
         await db.batch(statements);
-        await logActivity(projectId, "expense", `${statements.length - 1} card charges imported`, actor);
+        await logActivity(projectId, "expense", `${statements.length} card charges imported as working costs`, actor);
       }
     } else if (action === "update_expense_status") {
       const status = textValue(body.status, "pending");
@@ -481,8 +506,9 @@ export async function POST(request: Request) {
       if (expense.budget_line_id !== budgetLineId) {
         await db.batch([
           db.prepare("UPDATE expenses SET budget_line_id = ? WHERE id = ? AND project_id = ?").bind(budgetLineId, id, projectId),
-          db.prepare("UPDATE budget_lines SET actual = MAX(0, actual - ?) WHERE id = ? AND project_id = ?").bind(Number(expense.amount), expense.budget_line_id, projectId),
-          db.prepare("UPDATE budget_lines SET actual = actual + ? WHERE id = ? AND project_id = ?").bind(Number(expense.amount), budgetLineId, projectId),
+          db.prepare("UPDATE file_assets SET budget_line_id = ? WHERE expense_id = ? AND project_id = ?").bind(budgetLineId, id, projectId),
+          db.prepare("UPDATE budget_lines SET actual = COALESCE((SELECT SUM(amount) FROM file_assets WHERE project_id = ? AND budget_line_id = ? AND LOWER(category) = 'backup'), 0) WHERE id = ? AND project_id = ?").bind(projectId, expense.budget_line_id, expense.budget_line_id, projectId),
+          db.prepare("UPDATE budget_lines SET actual = COALESCE((SELECT SUM(amount) FROM file_assets WHERE project_id = ? AND budget_line_id = ? AND LOWER(category) = 'backup'), 0) WHERE id = ? AND project_id = ?").bind(projectId, budgetLineId, budgetLineId, projectId),
         ]);
         await logActivity(projectId, "expense", `${expense.vendor} allocated to ${budgetLine.item_code || budgetLine.item_name || budgetLine.category}`, actor);
       }

@@ -80,10 +80,15 @@ export async function DELETE(request: Request) {
     if (!authorization) return Response.json({ error: "Please log in to remove files." }, { status: 401 });
     if (authorization.role !== "production") return Response.json({ error: "Client logins cannot remove production files." }, { status: 403 });
     const body = await request.json() as { id?: string; key?: string; projectId?: string };
-    if (!body.id || !body.key || !body.projectId) return Response.json({ error: "Missing file details." }, { status: 400 });
+    if (!body.id || !body.projectId) return Response.json({ error: "Missing file details." }, { status: 400 });
     if (!canAccessPortalProject(authorization, body.projectId)) return Response.json({ error: "This login does not have access to that project." }, { status: 403 });
-    await bucket().delete(body.key);
-    await database().prepare("DELETE FROM file_assets WHERE id = ? AND project_id = ?").bind(body.id, body.projectId).run();
+    const asset = await database().prepare("SELECT object_key, expense_id, budget_line_id FROM file_assets WHERE id = ? AND project_id = ?").bind(body.id, body.projectId).first<{ object_key: string; expense_id: string; budget_line_id: string }>();
+    if (!asset) return Response.json({ error: "Backup file not found." }, { status: 404 });
+    await bucket().delete(asset.object_key);
+    const statements = [database().prepare("DELETE FROM file_assets WHERE id = ? AND project_id = ?").bind(body.id, body.projectId)];
+    if (asset.expense_id) statements.push(database().prepare("DELETE FROM expenses WHERE id = ? AND project_id = ?").bind(asset.expense_id, body.projectId));
+    if (asset.budget_line_id) statements.push(database().prepare("UPDATE budget_lines SET actual = COALESCE((SELECT SUM(amount) FROM file_assets WHERE project_id = ? AND budget_line_id = ? AND LOWER(category) = 'backup'), 0) WHERE id = ? AND project_id = ?").bind(body.projectId, asset.budget_line_id, asset.budget_line_id, body.projectId));
+    await database().batch(statements);
     return Response.json({ ok: true });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Delete failed." }, { status: 500 });

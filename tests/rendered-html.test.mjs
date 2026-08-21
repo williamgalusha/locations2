@@ -29,7 +29,13 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /Client Portal/);
   assert.match(portal, /Reconciliation/);
   assert.match(portal, /COST REPORT BY BUDGET LINE/);
-  assert.match(portal, /Allocated budget line/);
+  assert.match(portal, /CLICK A WORKING NUMBER TO EDIT ITS VENDORS/);
+  assert.match(portal, /ACTUAL.*Amounts supported by uploaded backup/);
+  assert.match(portal, /SAVE WORKING COSTS/);
+  assert.match(portal, /ADD ANOTHER VENDOR/);
+  assert.match(portal, /BACKUP LINKED/);
+  assert.match(portal, /NO BACKUP/);
+  assert.match(portal, /actual = data\?\.files\.filter/);
   assert.match(portal, /expense-allocation/);
   assert.match(portal, /BACKUP ALLOCATION/);
   assert.match(portal, /UPLOAD \+ ALLOCATE/);
@@ -179,7 +185,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   for (const column of ["budget_line_id", "expense_id", "vendor", "amount", "spend_date", "memo"]) assert.match(auditMigration, new RegExp(column));
   assert.match(authMigration, /CREATE TABLE `portal_users`/);
   assert.match(authMigration, /CREATE TABLE `portal_user_projects`/);
-  for (const action of ["create_project", "set_client_credential", "disable_client_credential", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
+  for (const action of ["create_project", "set_client_credential", "disable_client_credential", "add_budget_line", "update_budget_line", "delete_budget_line", "rename_budget_section", "set_budget_section_na", "remove_budget_section", "clear_budget", "reorder_budget_line", "replace_budget_snapshot", "update_project_budget_meta", "save_budget_version", "set_budget_version_status", "restore_budget_version", "delete_budget_version", "add_expense", "save_working_allocations", "import_expenses", "add_location", "update_location", "update_location_gallery", "set_location_visibility", "delete_location", "restore_location", "purge_location", "import_locations", "add_module_record", "update_module_record", "import_travel_reservation", "delete_module_record", "publish_client_item", "update_expense_status", "update_expense_allocation", "update_backup_status", "update_location_status", "update_project_status"]) {
     assert.match(route, new RegExp(action));
   }
   assert.match(fileRoute, /bucket\(\)\.put/);
@@ -188,6 +194,7 @@ test("includes durable records, file storage, budget history, and synchronized p
   assert.match(fileRoute, /expenseId/);
   assert.match(fileRoute, /isBackup = category\.toLowerCase\(\) === "backup"/);
   assert.match(fileRoute, /isBackup \? budgetLineId : ""/);
+  assert.match(fileRoute, /DELETE FROM expenses WHERE id = \?/);
   assert.match(schema, /budgetAudits/);
   assert.match(schema, /expenseId:\s*text\("expense_id"\)/);
   assert.match(auditRoute, /https:\/\/api\.openai\.com\/v1\/responses/);
