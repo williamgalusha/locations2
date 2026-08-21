@@ -169,9 +169,13 @@ export default function ProductionPortal({ initialUser }: { initialUser: User })
     setAuditing(true); setError("");
     try {
       const response = await fetch("/api/audit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: data.project.id }) });
-      const result = await response.json() as { error?: string; aiConfigured?: boolean };
+      const result = await response.json() as { error?: string; aiConfigured?: boolean; aiFailure?: string | null; audit?: { source?: string } };
       if (!response.ok) throw new Error(result.error ?? "Budget audit failed.");
-      await loadProject(data.project.id); setToast(result.aiConfigured ? "OpenAI budget audit complete" : "Budget audit complete · AI key not yet connected"); window.setTimeout(() => setToast(""), 3200);
+      await loadProject(data.project.id);
+      if (result.audit?.source === "openai") setToast("OpenAI budget audit complete");
+      else if (result.aiFailure) setToast(`OpenAI fallback · ${result.aiFailure}`);
+      else setToast(result.aiConfigured ? "OpenAI audit fell back to local rules" : "Budget audit complete · AI key not yet connected");
+      window.setTimeout(() => setToast(""), result.aiFailure ? 6000 : 3200);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Budget audit failed."); }
     finally { setAuditing(false); }
   }
