@@ -54,13 +54,13 @@ function outputText(payload: Record<string, unknown>) {
 }
 
 function safeOpenAiFailure(error: unknown) {
-  if (!(error instanceof OpenAiAuditError)) return "OpenAI could not be reached from the audit service.";
-  if (error.status === 400) return "OpenAI did not accept the configured model or audit request (HTTP 400).";
-  if (error.status === 401) return "OpenAI rejected the configured API key (HTTP 401).";
-  if (error.status === 403) return "The OpenAI project cannot access the configured model (HTTP 403).";
-  if (error.status === 429) return "OpenAI rate limits or available project quota blocked the request (HTTP 429).";
-  if (error.status >= 500) return `OpenAI is temporarily unavailable (HTTP ${error.status}).`;
-  return `OpenAI returned an unexpected response (HTTP ${error.status}).`;
+  if (!(error instanceof OpenAiAuditError)) return "Document review could not be reached from the audit service.";
+  if (error.status === 400) return "The document review request was not accepted (HTTP 400).";
+  if (error.status === 401) return "Document review credentials were rejected (HTTP 401).";
+  if (error.status === 403) return "The configured document review model is unavailable (HTTP 403).";
+  if (error.status === 429) return "Document review is temporarily rate-limited or out of quota (HTTP 429).";
+  if (error.status >= 500) return `Document review is temporarily unavailable (HTTP ${error.status}).`;
+  return `Document review returned an unexpected response (HTTP ${error.status}).`;
 }
 
 function parseModelNotes(text: string): { summary?: string; notes: AuditNote[] } {
@@ -179,7 +179,7 @@ export async function POST(request: Request) {
     const createdAt = new Date().toISOString();
     await db.batch([
       db.prepare("INSERT INTO budget_audits VALUES (?, ?, ?, 'complete', ?, ?, ?)").bind(id, projectId, source, summary, JSON.stringify(notes), createdAt),
-      db.prepare("INSERT INTO activities VALUES (?, ?, 'audit', ?, ?, ?)").bind(crypto.randomUUID(), projectId, `Budget audit completed · ${critical} critical · ${review} review`, `${authorization.displayName} · ${source === "openai" ? "OpenAI audit" : "Audit engine"}`, createdAt),
+      db.prepare("INSERT INTO activities VALUES (?, ?, 'audit', ?, ?, ?)").bind(crypto.randomUUID(), projectId, `Budget audit completed · ${critical} critical · ${review} review`, `${authorization.displayName} · ${source === "openai" ? "Document review" : "Audit engine"}`, createdAt),
     ]);
     return Response.json({ audit: { id, source, status: "complete", summary, notes, created_at: createdAt }, aiConfigured: Boolean(environment().OPENAI_API_KEY), aiFailure, documentsReviewed: source === "openai" ? fileResult.results.length : 0 });
   } catch (error) {

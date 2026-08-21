@@ -698,10 +698,10 @@ async function openAiReservation(input: ReservationInput) {
   }) });
   if (!response.ok) {
     console.warn(JSON.stringify({ event: "openai_travel_parse_failed", status: response.status }));
-    if (response.status === 401) throw new Error("OpenAI rejected the configured API key while reading this booking.");
-    if (response.status === 403) throw new Error("The OpenAI project cannot access the configured travel model.");
-    if (response.status === 429) throw new Error("OpenAI is temporarily rate-limited or out of project quota.");
-    throw new Error("OpenAI could not read this booking. Please try again or paste the confirmation text.");
+    if (response.status === 401) throw new Error("Document parsing credentials were rejected while reading this booking.");
+    if (response.status === 403) throw new Error("The configured travel-document model is unavailable.");
+    if (response.status === 429) throw new Error("Document parsing is temporarily rate-limited or out of quota.");
+    throw new Error("Document parsing could not read this booking. Please try again or paste the confirmation text.");
   }
   const text = responseOutputText(await response.json() as Record<string, unknown>);
   try { return normalizeReservation(JSON.parse(text)); } catch { return null; }

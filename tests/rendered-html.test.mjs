@@ -41,6 +41,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(portal, /UPLOAD \+ ALLOCATE/);
   assert.match(portal, /Missing backup/);
   assert.match(portal, /BUDGET AUDIT NOTES/);
+  assert.match(portal, /DOCUMENT \+ COST AUDIT/);
+  assert.match(portal, /DOCUMENT REVIEW/);
+  assert.doesNotMatch(portal, /OpenAI budget audit complete|OpenAI fallback|OpenAI audit fell back/);
   assert.match(portal, /TRAFFIC-AWARE PICKUP PLANNER/);
   assert.match(portal, /AIRPORT ARRIVAL = 2 HOURS BEFORE FLIGHT/);
   assert.match(portal, /CHECK DRIVE \+ CALCULATE/);
@@ -51,9 +54,12 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(travelView, /CHANGES SINCE LAST EXPORT/);
   assert.match(travelView, /application\/vnd\.openxmlformats-officedocument\.spreadsheetml\.sheet/);
   assert.match(travelView, /module: "travel_export"/);
+  assert.match(travelView, /Document parsing routes/);
+  assert.doesNotMatch(travelView, /AI parsing routes/);
   assert.match(referenceUi, /AUDIT BUDGET/);
   assert.match(referenceUi, /budget-audit-result/);
-  assert.match(referenceUi, /OPENAI \+ DOCUMENT REVIEW/);
+  assert.match(referenceUi, /DOCUMENT REVIEW/);
+  assert.doesNotMatch(referenceUi, /OPENAI \+ DOCUMENT REVIEW/);
   assert.match(referenceUi, /cover-grid-original/);
   assert.match(referenceUi, /aria-label="Click to log in"/);
   assert.doesNotMatch(referenceUi, />CLICK TO LOG IN</);
