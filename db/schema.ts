@@ -146,6 +146,25 @@ export const budgetAudits = sqliteTable("budget_audits", {
   createdAt: text("created_at").notNull(),
 });
 
+export const invoices = sqliteTable("invoices", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").notNull(),
+  invoiceNumber: text("invoice_number").notNull(),
+  kind: text("kind").notNull(),
+  status: text("status").notNull(),
+  issueDate: text("issue_date").notNull(),
+  dueDate: text("due_date").notNull(),
+  amount: real("amount").notNull(),
+  paidAmount: real("paid_amount").notNull().default(0),
+  description: text("description").notNull().default(""),
+  terms: text("terms").notNull().default("Net 30"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  uniqueIndex("idx_invoices_number_unique").on(table.invoiceNumber),
+  index("idx_invoices_project_status").on(table.projectId, table.status),
+]);
+
 export const portalUsers = sqliteTable("portal_users", {
   id: text("id").primaryKey(),
   username: text("username").notNull(),

@@ -71,6 +71,13 @@
       "when": 1787328187906,
       "tag": "0009_spicy_fixer",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1787608191030,
+      "tag": "0010_wealthy_abomination",
+      "breakpoints": true
     }
   ]
 }

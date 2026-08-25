@@ -24,6 +24,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
 
   assert.match(page, /verifyPortalSession/);
   assert.match(page, /<ProductionPortal initialUser=\{initialUser\} \/>/);
+  assert.match(page, /const initialUser = credential\s*\?/);
+  assert.doesNotMatch(page, /getChatGPTUser/);
+  assert.doesNotMatch(credentialAuth, /request\.headers\.get\("oai-authenticated-user-email"\)/);
   assert.match(layout, /BILL, INC\. — Production Control/);
   assert.match(layout, /\/og\.png/);
   assert.match(portal, /CONTROL ROOM/);
@@ -285,6 +288,32 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.doesNotMatch(page + layout + portal + referenceUi, /codex-preview|SkeletonPreview/);
   await assert.rejects(access(new URL("app/_sites-preview/SkeletonPreview.tsx", root)));
   await access(new URL("public/bill-inc.png", root));
+});
+
+test("keeps invoice accounting admin-only with job and global reporting", async () => {
+  const [portal, route, schema, migration, css] = await Promise.all([
+    readFile(new URL("app/production-portal.tsx", root), "utf8"),
+    readFile(new URL("app/api/portal/route.ts", root), "utf8"),
+    readFile(new URL("db/schema.ts", root), "utf8"),
+    readFile(new URL("drizzle/0010_wealthy_abomination.sql", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+
+  assert.match(portal, /GlobalAccountingView/);
+  assert.match(portal, /JobAccountingView/);
+  assert.match(portal, /data\?\.viewer/);
+  assert.match(portal, /accessLevel: data\.viewer\.accessLevel/);
+  assert.match(route, /viewer:\s*\{[^}]*accessLevel: authorization\.accessLevel[^}]*isAdmin: authorization\.isAdmin/s);
+  assert.match(portal, /A · ADVANCE \/ B · OVERAGES \/ C · BALANCE/);
+  assert.match(portal, /PRINT \/ SAVE PDF/);
+  assert.match(portal, /<img src="\/bill-inc\.png" alt="BILL, INC\." \/>/);
+  assert.match(portal, /item\.id !== "accounting" \|\| user\.accessLevel === "admin"/);
+  assert.match(route, /ADMIN_ACCOUNTING_ACTIONS/);
+  assert.match(route, /Administrator access is required for accounting/);
+  assert.match(route, /authorization\.isAdmin\s*\? db\.prepare/);
+  assert.match(schema, /export const invoices = sqliteTable\("invoices"/);
+  assert.match(migration, /CREATE UNIQUE INDEX `idx_invoices_number_unique`/);
+  assert.match(css, /data-print-surface="invoice"/);
 });
 
 test("includes durable records, file storage, budget history, and synchronized production actions", async () => {

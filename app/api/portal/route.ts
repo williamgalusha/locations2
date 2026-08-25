@@ -5,6 +5,7 @@ export const runtime = "edge";
 
 const FALLBACK_PROJECT_ID = "prj_harbor";
 const MODULES = new Set(["crew", "travel", "travel_export", "schedule", "schedule_builder", "production", "casting", "art_buying", "budget_comment", "client_share"]);
+const ADMIN_ACCOUNTING_ACTIONS = new Set(["create_invoice", "update_invoice"]);
 
 type ActionBody = { action?: string; projectId?: unknown; [key: string]: unknown };
 
@@ -107,6 +108,13 @@ async function ensureSchema() {
       status TEXT NOT NULL, summary TEXT NOT NULL, notes TEXT NOT NULL,
       created_at TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY, project_id TEXT NOT NULL, invoice_number TEXT NOT NULL,
+      kind TEXT NOT NULL, status TEXT NOT NULL, issue_date TEXT NOT NULL,
+      due_date TEXT NOT NULL, amount REAL NOT NULL, paid_amount REAL NOT NULL DEFAULT 0,
+      description TEXT NOT NULL DEFAULT '', terms TEXT NOT NULL DEFAULT 'Net 30',
+      created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+    )`),
     db.prepare("CREATE INDEX IF NOT EXISTS budget_project_idx ON budget_lines (project_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS budget_version_project_idx ON budget_versions (project_id, created_at)"),
     db.prepare("CREATE INDEX IF NOT EXISTS expense_project_idx ON expenses (project_id)"),
@@ -115,6 +123,8 @@ async function ensureSchema() {
     db.prepare("CREATE INDEX IF NOT EXISTS module_project_idx ON module_records (project_id, module)"),
     db.prepare("CREATE INDEX IF NOT EXISTS file_project_idx ON file_assets (project_id)"),
     db.prepare("CREATE INDEX IF NOT EXISTS audit_project_idx ON budget_audits (project_id, created_at)"),
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_invoices_number_unique ON invoices (invoice_number)"),
+    db.prepare("CREATE INDEX IF NOT EXISTS idx_invoices_project_status ON invoices (project_id, status)"),
   ]);
   const additions = [
     ["projects", "contact TEXT NOT NULL DEFAULT ''"], ["projects", "contact_email TEXT NOT NULL DEFAULT ''"],
@@ -237,7 +247,29 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
     FROM locations l INNER JOIN projects p ON p.id = l.project_id
     WHERE l.project_id IN (${locationPlaceholders})
     ORDER BY p.shoot_start DESC, p.name, l.name`).bind(...accessibleProjectIds).all();
-  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult, auditResult, clientCredential, globalLocationResult] = await Promise.all([
+  const emptyRows = Promise.resolve({ results: [] as Record<string, unknown>[] });
+  const invoiceQuery = authorization.isAdmin
+    ? db.prepare(`SELECT i.*, p.name AS project_name, p.client AS project_client, p.code AS project_code,
+        p.contact AS project_contact, p.contact_email AS project_contact_email,
+        p.billing_address AS project_billing_address, p.po_no AS project_po_no
+      FROM invoices i INNER JOIN projects p ON p.id = i.project_id
+      WHERE i.project_id = ? ORDER BY i.issue_date DESC, i.invoice_number DESC`).bind(chosen).all()
+    : emptyRows;
+  const globalInvoiceQuery = authorization.isAdmin
+    ? db.prepare(`SELECT i.*, p.name AS project_name, p.client AS project_client, p.code AS project_code,
+        p.contact AS project_contact, p.contact_email AS project_contact_email,
+        p.billing_address AS project_billing_address, p.po_no AS project_po_no
+      FROM invoices i INNER JOIN projects p ON p.id = i.project_id
+      ORDER BY i.issue_date DESC, i.invoice_number DESC`).all()
+    : emptyRows;
+  const invoiceTotalsQuery = authorization.isAdmin
+    ? db.prepare(`SELECT project_id,
+        COALESCE(SUM(CASE WHEN status NOT IN ('draft', 'void') THEN amount ELSE 0 END), 0) AS invoiced_total,
+        COALESCE(SUM(CASE WHEN status != 'void' THEN paid_amount ELSE 0 END), 0) AS collected_total,
+        COUNT(*) AS invoice_count
+      FROM invoices GROUP BY project_id`).all()
+    : emptyRows;
+  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult, auditResult, clientCredential, globalLocationResult, invoiceResult, globalInvoiceResult, invoiceTotalsResult] = await Promise.all([
     db.prepare("SELECT * FROM projects WHERE id = ?").bind(chosen).first(),
     db.prepare("SELECT * FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(chosen).all(),
     db.prepare("SELECT * FROM budget_versions WHERE project_id = ? ORDER BY created_at DESC").bind(chosen).all(),
@@ -249,10 +281,19 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
     db.prepare("SELECT * FROM budget_audits WHERE project_id = ? ORDER BY created_at DESC LIMIT 20").bind(chosen).all(),
     db.prepare("SELECT u.username, u.active, u.updated_at FROM portal_users u INNER JOIN portal_user_projects up ON up.user_id = u.id WHERE up.project_id = ? AND u.access_level = 'client' LIMIT 1").bind(chosen).first(),
     globalLocationQuery,
+    invoiceQuery,
+    globalInvoiceQuery,
+    invoiceTotalsQuery,
   ]);
   const records = moduleResult.results.map((record) => ({ ...record, data: JSON.parse(String(record.data || "{}")) }));
   const budgetVersions = versionResult.results.map((version) => ({ ...version, snapshot: JSON.parse(String(version.snapshot || "[]")) }));
+  const invoiceTotals = new Map<string, Record<string, unknown>>(invoiceTotalsResult.results.map((row: Record<string, unknown>) => [String(row.project_id), row]));
   return {
+    viewer: {
+      role: authorization.role,
+      accessLevel: authorization.accessLevel,
+      isAdmin: authorization.isAdmin,
+    },
     projects: projects.map((row) => ({
       id: String(row.id), name: String(row.name), client: String(row.client), code: String(row.code), status: String(row.status),
       shoot_start: String(row.shoot_start), shoot_end: String(row.shoot_end), currency: String(row.currency || "USD"),
@@ -260,12 +301,15 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
       po_no: String(row.po_no || ""), budget_notes: String(row.budget_notes || ""), budget_changes: String(row.budget_changes || ""),
       markup_pct: Number(row.markup_pct || 0), insurance_pct: Number(row.insurance_pct || 0),
     })),
-    projectSummaries: projects.map((row) => ({
+    projectSummaries: projects.map((row) => {
+      const invoiceTotal = invoiceTotals.get(String(row.id));
+      return {
       id: String(row.id), name: String(row.name), client: String(row.client), code: String(row.code), status: String(row.status),
       shoot_start: String(row.shoot_start), shoot_end: String(row.shoot_end), currency: String(row.currency || "USD"),
       estimate: Number(row.estimate_total || 0), committed: Number(row.committed_total || 0), actual: Number(row.actual_total || 0),
       backupCount: Number(row.backup_count || 0), missingBackupCount: Number(row.missing_backup_count || 0),
-    })),
+      invoiced: Number(invoiceTotal?.invoiced_total || 0), collected: Number(invoiceTotal?.collected_total || 0), invoiceCount: Number(invoiceTotal?.invoice_count || 0),
+    }; }),
     project,
     budgetLines: budgetResult.results,
     budgetVersions,
@@ -276,6 +320,8 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
     files: fileResult.results,
     audits: auditResult.results,
     records,
+    invoices: invoiceResult.results,
+    globalInvoices: globalInvoiceResult.results,
     clientCredential: clientCredential || null,
   };
 }
@@ -315,8 +361,41 @@ export async function POST(request: Request) {
 
     if (action !== "create_project" && !canAccessPortalProject(authorization, projectId)) return Response.json({ error: "This login does not have access to that project." }, { status: 403 });
     if (authorization.role === "client" && !new Set(["update_location_status", "add_budget_comment"]).has(action)) return Response.json({ error: "Client logins can only update client-facing selections and submit budget comments." }, { status: 403 });
+    if (ADMIN_ACCOUNTING_ACTIONS.has(action) && !authorization.isAdmin) return Response.json({ error: "Administrator access is required for accounting." }, { status: 403 });
 
-    if (action === "create_project") {
+    if (action === "create_invoice" || action === "update_invoice") {
+      const invoiceNumber = textValue(body.invoiceNumber).toUpperCase();
+      const invoiceId = textValue(body.id);
+      const kinds = new Set(["advance", "overage", "balance", "other"]);
+      const statuses = new Set(["draft", "invoiced", "partially_paid", "paid", "overdue", "void"]);
+      const kind = kinds.has(textValue(body.kind)) ? textValue(body.kind) : "other";
+      let status = statuses.has(textValue(body.status)) ? textValue(body.status) : "draft";
+      const issueDate = textValue(body.issueDate, now.slice(0, 10));
+      const dueDate = textValue(body.dueDate, issueDate);
+      const amount = numberValue(body.amount);
+      const paidAmount = Math.min(amount, numberValue(body.paidAmount));
+      const description = textValue(body.description, `${kind === "other" ? "Production" : kind.replaceAll("_", " ")} invoice`);
+      const terms = textValue(body.terms, "Net 30");
+      if (!invoiceNumber || !/^[A-Z0-9][A-Z0-9./-]{2,63}$/.test(invoiceNumber)) throw new Error("Use a unique invoice number with letters, numbers, dashes or slashes.");
+      if (dueDate < issueDate) throw new Error("Invoice due date cannot be before its issue date.");
+      if (paidAmount >= amount && amount > 0 && status !== "void") status = "paid";
+      else if (paidAmount > 0 && status !== "void") status = "partially_paid";
+      const conflict = await db.prepare("SELECT id FROM invoices WHERE invoice_number = ? LIMIT 1").bind(invoiceNumber).first<{ id: string }>();
+      if (conflict && conflict.id !== invoiceId) throw new Error(`Invoice ${invoiceNumber} already exists.`);
+      if (action === "create_invoice") {
+        const id = crypto.randomUUID();
+        await db.prepare("INSERT INTO invoices (id, project_id, invoice_number, kind, status, issue_date, due_date, amount, paid_amount, description, terms, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, projectId, invoiceNumber, kind, status, issueDate, dueDate, amount, paidAmount, description, terms, now, now).run();
+        await logActivity(projectId, "accounting", `${invoiceNumber} created`, actor);
+      } else {
+        if (!invoiceId) throw new Error("Choose an invoice to update.");
+        const existing = await db.prepare("SELECT id FROM invoices WHERE id = ? AND project_id = ? LIMIT 1").bind(invoiceId, projectId).first();
+        if (!existing) throw new Error("That invoice could not be found.");
+        await db.prepare("UPDATE invoices SET invoice_number = ?, kind = ?, status = ?, issue_date = ?, due_date = ?, amount = ?, paid_amount = ?, description = ?, terms = ?, updated_at = ? WHERE id = ? AND project_id = ?")
+          .bind(invoiceNumber, kind, status, issueDate, dueDate, amount, paidAmount, description, terms, now, invoiceId, projectId).run();
+        await logActivity(projectId, "accounting", `${invoiceNumber} updated`, actor);
+      }
+    } else if (action === "create_project") {
       if (authorization.accessLevel !== "admin" && authorization.accessLevel !== "full") return Response.json({ error: "Only administrators and full-access users can create projects." }, { status: 403 });
       projectId = `prj_${crypto.randomUUID().replaceAll("-", "").slice(0, 12)}`;
       const name = textValue(body.name, "Untitled production");

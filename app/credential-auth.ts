@@ -224,16 +224,6 @@ function cookieValue(request: Request, name: string) {
 }
 
 export async function authorizePortalRequest(request: Request): Promise<PortalAuthorization | null> {
-  const chatEmail = request.headers.get("oai-authenticated-user-email");
-  if (chatEmail) {
-    const encodedName = request.headers.get("oai-authenticated-user-full-name");
-    const encoded = request.headers.get("oai-authenticated-user-full-name-encoding") === "percent-encoded-utf-8";
-    let displayName = chatEmail;
-    if (encodedName) {
-      try { displayName = encoded ? decodeURIComponent(encodedName) : encodedName; } catch { displayName = chatEmail; }
-    }
-    return { userId: `chatgpt:${chatEmail}`, username: chatEmail, displayName, role: "production", accessLevel: "admin", projectIds: [], isAdmin: true, chatGPT: true };
-  }
   const session = await verifyPortalSession(cookieValue(request, PORTAL_SESSION_COOKIE)).catch(() => null);
   if (!session) return null;
   await ensurePortalAuthSchema();
