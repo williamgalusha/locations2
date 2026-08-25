@@ -157,7 +157,7 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /reference-login-panel img[^}]*height:\s*32px/);
   assert.match(css, /reference-login-options[^}]*width:\s*min\(165px/);
   assert.match(css, /reference-login-options > button[^}]*min-height:\s*23px/);
-  assert.match(css, /:root\[data-theme="dark"\] \.budget-document[^}]*background:\s*#171717[^}]*color:\s*#f2f2f0/);
+  assert.match(css, /:root\[data-theme="dark"\] \.budget-document[^}]*background:\s*#212326[^}]*color:\s*#e5e6e3/);
   assert.match(css, /:root\[data-theme="dark"\] \.estimate-header img[^}]*filter:\s*invert\(1\)/);
   assert.match(css, /:root\[data-theme="dark"\] \.estimate-header img[^}]*mix-blend-mode:\s*screen/);
   assert.match(referenceUi, /reference-credential-form/);
@@ -252,6 +252,9 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.match(css, /template-upload-panel/);
   assert.match(css, /data-density="compact"/);
   assert.match(css, /data-reduce-motion="true"/);
+  assert.match(css, /:root\[data-theme="dark"\][^{]*\{[^}]*--bg:\s*#1a1b1d[^}]*--panel:\s*#212326[^}]*--ink:\s*#e5e6e3/);
+  assert.match(css, /:root\[data-theme="dark"\] \.sidebar[^}]*background:\s*#0d0e0f/);
+  assert.match(css, /:root\[data-theme="dark"\] \.nav-item\.active[^}]*background:\s*#2a2d30[^}]*color:\s*#e8e9e6/);
   assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.sidebar[^}]*background:\s*#e7e7e4[^}]*color:\s*#111/);
   assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.nav-item[^}]*color:\s*#333/);
   assert.match(css, /:root:not\(\[data-theme="dark"\]\) \.brand img[^}]*filter:\s*none/);
@@ -259,7 +262,8 @@ test("ships the BILL, INC. production control room instead of starter preview UI
   assert.doesNotMatch(portal, /mark:\s*"\d+"/);
   assert.doesNotMatch(css, /orange|coral|#ef5b3e/i);
   assert.doesNotMatch(css, /grayscale\(1\)/);
-  assert.match(css, /client-theme-dark/);
+  assert.match(css, /\.original-client-portal\.client-theme-dark[^}]*--client-bg:\s*#1a1b1d[^}]*--client-panel:\s*#222427[^}]*--client-ink:\s*#e5e6e3/);
+  assert.match(css, /\.original-location-presentation\.location-theme-dark[^}]*--location-bg:\s*#1a1b1d[^}]*--location-panel:\s*#222427[^}]*--location-ink:\s*#e5e6e3/);
   assert.match(css, /location-deck-stage/);
   assert.match(css, /pickup-planner/);
   assert.match(css, /pickup-result/);
