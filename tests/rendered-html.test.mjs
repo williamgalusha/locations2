@@ -291,11 +291,13 @@ test("ships the BILL, INC. production control room instead of starter preview UI
 });
 
 test("keeps invoice accounting admin-only with job and global reporting", async () => {
-  const [portal, route, schema, migration, css] = await Promise.all([
+  const [portal, referenceUi, route, schema, migration, signoffMigration, css] = await Promise.all([
     readFile(new URL("app/production-portal.tsx", root), "utf8"),
+    readFile(new URL("app/reference-ui.tsx", root), "utf8"),
     readFile(new URL("app/api/portal/route.ts", root), "utf8"),
     readFile(new URL("db/schema.ts", root), "utf8"),
     readFile(new URL("drizzle/0010_wealthy_abomination.sql", root), "utf8"),
+    readFile(new URL("drizzle/0011_ordinary_sue_storm.sql", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
   ]);
 
@@ -313,7 +315,19 @@ test("keeps invoice accounting admin-only with job and global reporting", async 
   assert.match(route, /authorization\.isAdmin\s*\? db\.prepare/);
   assert.match(schema, /export const invoices = sqliteTable\("invoices"/);
   assert.match(migration, /CREATE UNIQUE INDEX `idx_invoices_number_unique`/);
+  assert.match(referenceUi, /ESTIMATE SIGN-OFF/);
+  assert.match(referenceUi, /action: "update_budget_signoff"/);
+  assert.match(referenceUi, /ADVANCE \/ INVOICE %/);
+  assert.match(portal, /SIGNED-OFF ESTIMATE \/ OVERAGE/);
+  assert.match(portal, /calculatedSourceAmount/);
+  assert.match(portal, /USE CALCULATED AMOUNT/);
+  assert.match(route, /signed_off_revenue/);
+  assert.match(route, /Choose a signed-off estimate or overage/);
+  assert.match(signoffMigration, /ALTER TABLE `budget_versions` ADD `signed_off`/);
+  assert.match(signoffMigration, /ALTER TABLE `invoices` ADD `source_version_id`/);
   assert.match(css, /data-print-surface="invoice"/);
+  assert.match(css, /signoff-composer/);
+  assert.match(css, /invoice-source-summary/);
 });
 
 test("includes durable records, file storage, budget history, and synchronized production actions", async () => {

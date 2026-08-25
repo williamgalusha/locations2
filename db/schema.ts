@@ -46,6 +46,12 @@ export const budgetVersions = sqliteTable("budget_versions", {
   status: text("status").notNull(),
   snapshot: text("snapshot").notNull(),
   createdAt: text("created_at").notNull(),
+  signedOff: real("signed_off").notNull().default(0),
+  signedOffAt: text("signed_off_at").notNull().default(""),
+  signedOffBy: text("signed_off_by").notNull().default(""),
+  signedOffAmount: real("signed_off_amount").notNull().default(0),
+  billingPercent: real("billing_percent").notNull().default(100),
+  paymentTerms: text("payment_terms").notNull().default("Net 30"),
 });
 
 export const expenses = sqliteTable("expenses", {
@@ -158,6 +164,9 @@ export const invoices = sqliteTable("invoices", {
   paidAmount: real("paid_amount").notNull().default(0),
   description: text("description").notNull().default(""),
   terms: text("terms").notNull().default("Net 30"),
+  sourceVersionId: text("source_version_id").notNull().default(""),
+  sourceLabel: text("source_label").notNull().default(""),
+  billingPercent: real("billing_percent").notNull().default(100),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 }, (table) => [

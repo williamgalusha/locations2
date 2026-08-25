@@ -5,7 +5,7 @@ export const runtime = "edge";
 
 const FALLBACK_PROJECT_ID = "prj_harbor";
 const MODULES = new Set(["crew", "travel", "travel_export", "schedule", "schedule_builder", "production", "casting", "art_buying", "budget_comment", "client_share"]);
-const ADMIN_ACCOUNTING_ACTIONS = new Set(["create_invoice", "update_invoice"]);
+const ADMIN_ACCOUNTING_ACTIONS = new Set(["create_invoice", "update_invoice", "update_budget_signoff"]);
 
 type ActionBody = { action?: string; projectId?: unknown; [key: string]: unknown };
 
@@ -66,7 +66,10 @@ async function ensureSchema() {
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS budget_versions (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, name TEXT NOT NULL,
-      status TEXT NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL
+      status TEXT NOT NULL, snapshot TEXT NOT NULL, created_at TEXT NOT NULL,
+      signed_off REAL NOT NULL DEFAULT 0, signed_off_at TEXT NOT NULL DEFAULT '',
+      signed_off_by TEXT NOT NULL DEFAULT '', signed_off_amount REAL NOT NULL DEFAULT 0,
+      billing_percent REAL NOT NULL DEFAULT 100, payment_terms TEXT NOT NULL DEFAULT 'Net 30'
     )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS expenses (
       id TEXT PRIMARY KEY, project_id TEXT NOT NULL, budget_line_id TEXT NOT NULL,
@@ -113,6 +116,8 @@ async function ensureSchema() {
       kind TEXT NOT NULL, status TEXT NOT NULL, issue_date TEXT NOT NULL,
       due_date TEXT NOT NULL, amount REAL NOT NULL, paid_amount REAL NOT NULL DEFAULT 0,
       description TEXT NOT NULL DEFAULT '', terms TEXT NOT NULL DEFAULT 'Net 30',
+      source_version_id TEXT NOT NULL DEFAULT '', source_label TEXT NOT NULL DEFAULT '',
+      billing_percent REAL NOT NULL DEFAULT 100,
       created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     )`),
     db.prepare("CREATE INDEX IF NOT EXISTS budget_project_idx ON budget_lines (project_id)"),
@@ -136,6 +141,9 @@ async function ensureSchema() {
     ["budget_lines", "quantity REAL NOT NULL DEFAULT 1"], ["budget_lines", "days REAL NOT NULL DEFAULT 1"],
     ["budget_lines", "tax_pct REAL NOT NULL DEFAULT 0"], ["budget_lines", "is_na REAL NOT NULL DEFAULT 0"],
     ["budget_lines", "na_note TEXT NOT NULL DEFAULT ''"], ["locations", "category TEXT NOT NULL DEFAULT 'Uncategorized'"],
+    ["budget_versions", "signed_off REAL NOT NULL DEFAULT 0"], ["budget_versions", "signed_off_at TEXT NOT NULL DEFAULT ''"],
+    ["budget_versions", "signed_off_by TEXT NOT NULL DEFAULT ''"], ["budget_versions", "signed_off_amount REAL NOT NULL DEFAULT 0"],
+    ["budget_versions", "billing_percent REAL NOT NULL DEFAULT 100"], ["budget_versions", "payment_terms TEXT NOT NULL DEFAULT 'Net 30'"],
     ["locations", "square_feet TEXT NOT NULL DEFAULT '—'"], ["locations", "availability TEXT NOT NULL DEFAULT 'Availability Pending'"],
     ["locations", "blurb TEXT NOT NULL DEFAULT ''"], ["locations", "gallery TEXT NOT NULL DEFAULT '[]'"],
     ["locations", "deleted_at TEXT NOT NULL DEFAULT ''"], ["locations", "client_visible REAL NOT NULL DEFAULT 1"],
@@ -146,6 +154,8 @@ async function ensureSchema() {
     ["file_assets", "budget_line_id TEXT NOT NULL DEFAULT ''"], ["file_assets", "expense_id TEXT NOT NULL DEFAULT ''"],
     ["file_assets", "vendor TEXT NOT NULL DEFAULT ''"], ["file_assets", "amount REAL NOT NULL DEFAULT 0"],
     ["file_assets", "spend_date TEXT NOT NULL DEFAULT ''"], ["file_assets", "memo TEXT NOT NULL DEFAULT ''"],
+    ["invoices", "source_version_id TEXT NOT NULL DEFAULT ''"], ["invoices", "source_label TEXT NOT NULL DEFAULT ''"],
+    ["invoices", "billing_percent REAL NOT NULL DEFAULT 100"],
   ];
   for (const [table, column] of additions) {
     try { await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${column}`).run(); } catch { /* column already exists */ }
@@ -221,8 +231,8 @@ async function seedIfNeeded() {
     ];
     const current = await db.prepare("SELECT id, category, description, estimate, section_code, item_code, item_name, rate, quantity, days, tax_pct, is_na, na_note FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(FALLBACK_PROJECT_ID).all();
     await db.batch([
-      db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind("bv_v6", FALLBACK_PROJECT_ID, "V6 · Agency review", "archived", JSON.stringify(v6), "2026-08-16T15:20:00.000Z"),
-      db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind("bv_v7", FALLBACK_PROJECT_ID, "V7 · Confirmed estimate", "confirmed", JSON.stringify(current.results), "2026-08-19T12:00:00.000Z"),
+      db.prepare("INSERT INTO budget_versions (id, project_id, name, status, snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind("bv_v6", FALLBACK_PROJECT_ID, "V6 · Agency review", "archived", JSON.stringify(v6), "2026-08-16T15:20:00.000Z"),
+      db.prepare("INSERT INTO budget_versions (id, project_id, name, status, snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind("bv_v7", FALLBACK_PROJECT_ID, "V7 · Confirmed estimate", "confirmed", JSON.stringify(current.results), "2026-08-19T12:00:00.000Z"),
     ]);
   }
 }
@@ -231,6 +241,11 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
   const db = database();
   const projectsResult = await db.prepare(`SELECT p.*,
     COALESCE((SELECT SUM(bl.estimate) FROM budget_lines bl WHERE bl.project_id = p.id AND COALESCE(bl.is_na, 0) = 0), 0) AS estimate_total,
+    COALESCE((SELECT bv.signed_off_amount FROM budget_versions bv
+      WHERE bv.project_id = p.id AND bv.signed_off = 1 AND bv.status NOT LIKE 'overage%'
+      ORDER BY bv.signed_off_at DESC, bv.created_at DESC LIMIT 1), 0)
+      + COALESCE((SELECT SUM(bv.signed_off_amount) FROM budget_versions bv
+        WHERE bv.project_id = p.id AND bv.signed_off = 1 AND bv.status LIKE 'overage%'), 0) AS signed_off_revenue,
     COALESCE((SELECT SUM(e.amount) FROM expenses e WHERE e.project_id = p.id), 0) AS committed_total,
     COALESCE((SELECT SUM(f.amount) FROM file_assets f WHERE f.project_id = p.id AND LOWER(f.category) = 'backup'), 0) AS actual_total,
     COALESCE((SELECT COUNT(*) FROM file_assets f WHERE f.project_id = p.id AND LOWER(f.category) = 'backup'), 0) AS backup_count,
@@ -269,7 +284,13 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
         COUNT(*) AS invoice_count
       FROM invoices GROUP BY project_id`).all()
     : emptyRows;
-  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult, auditResult, clientCredential, globalLocationResult, invoiceResult, globalInvoiceResult, invoiceTotalsResult] = await Promise.all([
+  const signedOffVersionQuery = authorization.isAdmin
+    ? db.prepare(`SELECT bv.*, p.name AS project_name, p.client AS project_client, p.code AS project_code
+      FROM budget_versions bv INNER JOIN projects p ON p.id = bv.project_id
+      WHERE bv.signed_off = 1
+      ORDER BY bv.signed_off_at DESC, bv.created_at DESC`).all()
+    : emptyRows;
+  const [project, budgetResult, versionResult, expenseResult, locationResult, activityResult, moduleResult, fileResult, auditResult, clientCredential, globalLocationResult, invoiceResult, globalInvoiceResult, invoiceTotalsResult, signedOffVersionResult] = await Promise.all([
     db.prepare("SELECT * FROM projects WHERE id = ?").bind(chosen).first(),
     db.prepare("SELECT * FROM budget_lines WHERE project_id = ? ORDER BY created_at, category").bind(chosen).all(),
     db.prepare("SELECT * FROM budget_versions WHERE project_id = ? ORDER BY created_at DESC").bind(chosen).all(),
@@ -284,9 +305,11 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
     invoiceQuery,
     globalInvoiceQuery,
     invoiceTotalsQuery,
+    signedOffVersionQuery,
   ]);
   const records = moduleResult.results.map((record) => ({ ...record, data: JSON.parse(String(record.data || "{}")) }));
   const budgetVersions = versionResult.results.map((version) => ({ ...version, snapshot: JSON.parse(String(version.snapshot || "[]")) }));
+  const signedOffVersions = signedOffVersionResult.results.map((version) => ({ ...version, snapshot: JSON.parse(String(version.snapshot || "[]")) }));
   const invoiceTotals = new Map<string, Record<string, unknown>>(invoiceTotalsResult.results.map((row: Record<string, unknown>) => [String(row.project_id), row]));
   return {
     viewer: {
@@ -307,6 +330,7 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
       id: String(row.id), name: String(row.name), client: String(row.client), code: String(row.code), status: String(row.status),
       shoot_start: String(row.shoot_start), shoot_end: String(row.shoot_end), currency: String(row.currency || "USD"),
       estimate: Number(row.estimate_total || 0), committed: Number(row.committed_total || 0), actual: Number(row.actual_total || 0),
+      signedOffRevenue: Number(row.signed_off_revenue || 0),
       backupCount: Number(row.backup_count || 0), missingBackupCount: Number(row.missing_backup_count || 0),
       invoiced: Number(invoiceTotal?.invoiced_total || 0), collected: Number(invoiceTotal?.collected_total || 0), invoiceCount: Number(invoiceTotal?.invoice_count || 0),
     }; }),
@@ -322,6 +346,7 @@ async function portalData(projectId: string, authorization: PortalAuthorization)
     records,
     invoices: invoiceResult.results,
     globalInvoices: globalInvoiceResult.results,
+    signedOffVersions,
     clientCredential: clientCredential || null,
   };
 }
@@ -375,7 +400,15 @@ export async function POST(request: Request) {
       const amount = numberValue(body.amount);
       const paidAmount = Math.min(amount, numberValue(body.paidAmount));
       const description = textValue(body.description, `${kind === "other" ? "Production" : kind.replaceAll("_", " ")} invoice`);
-      const terms = textValue(body.terms, "Net 30");
+      const sourceVersionId = textValue(body.sourceVersionId);
+      const sourceVersion = sourceVersionId
+        ? await db.prepare("SELECT id, name, signed_off, billing_percent, payment_terms FROM budget_versions WHERE id = ? AND project_id = ? LIMIT 1").bind(sourceVersionId, projectId).first<{ id: string; name: string; signed_off: number; billing_percent: number; payment_terms: string }>()
+        : null;
+      if (sourceVersionId && (!sourceVersion || Number(sourceVersion.signed_off) !== 1)) throw new Error("Choose a signed-off estimate or overage for this invoice.");
+      const sourceLabel = sourceVersion?.name || "";
+      const requestedPercent = body.billingPercent === undefined ? Number(sourceVersion?.billing_percent || 100) : numberValue(body.billingPercent);
+      const billingPercent = Math.min(100, requestedPercent);
+      const terms = textValue(body.terms, sourceVersion?.payment_terms || "Net 30");
       if (!invoiceNumber || !/^[A-Z0-9][A-Z0-9./-]{2,63}$/.test(invoiceNumber)) throw new Error("Use a unique invoice number with letters, numbers, dashes or slashes.");
       if (dueDate < issueDate) throw new Error("Invoice due date cannot be before its issue date.");
       if (paidAmount >= amount && amount > 0 && status !== "void") status = "paid";
@@ -384,16 +417,45 @@ export async function POST(request: Request) {
       if (conflict && conflict.id !== invoiceId) throw new Error(`Invoice ${invoiceNumber} already exists.`);
       if (action === "create_invoice") {
         const id = crypto.randomUUID();
-        await db.prepare("INSERT INTO invoices (id, project_id, invoice_number, kind, status, issue_date, due_date, amount, paid_amount, description, terms, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, projectId, invoiceNumber, kind, status, issueDate, dueDate, amount, paidAmount, description, terms, now, now).run();
+        await db.prepare("INSERT INTO invoices (id, project_id, invoice_number, kind, status, issue_date, due_date, amount, paid_amount, description, terms, source_version_id, source_label, billing_percent, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, projectId, invoiceNumber, kind, status, issueDate, dueDate, amount, paidAmount, description, terms, sourceVersionId, sourceLabel, billingPercent, now, now).run();
         await logActivity(projectId, "accounting", `${invoiceNumber} created`, actor);
       } else {
         if (!invoiceId) throw new Error("Choose an invoice to update.");
         const existing = await db.prepare("SELECT id FROM invoices WHERE id = ? AND project_id = ? LIMIT 1").bind(invoiceId, projectId).first();
         if (!existing) throw new Error("That invoice could not be found.");
-        await db.prepare("UPDATE invoices SET invoice_number = ?, kind = ?, status = ?, issue_date = ?, due_date = ?, amount = ?, paid_amount = ?, description = ?, terms = ?, updated_at = ? WHERE id = ? AND project_id = ?")
-          .bind(invoiceNumber, kind, status, issueDate, dueDate, amount, paidAmount, description, terms, now, invoiceId, projectId).run();
+        await db.prepare("UPDATE invoices SET invoice_number = ?, kind = ?, status = ?, issue_date = ?, due_date = ?, amount = ?, paid_amount = ?, description = ?, terms = ?, source_version_id = ?, source_label = ?, billing_percent = ?, updated_at = ? WHERE id = ? AND project_id = ?")
+          .bind(invoiceNumber, kind, status, issueDate, dueDate, amount, paidAmount, description, terms, sourceVersionId, sourceLabel, billingPercent, now, invoiceId, projectId).run();
         await logActivity(projectId, "accounting", `${invoiceNumber} updated`, actor);
+      }
+    } else if (action === "update_budget_signoff") {
+      const id = textValue(body.id);
+      const signedOff = body.signedOff === true;
+      const version = await db.prepare(`SELECT bv.id, bv.name, bv.status, bv.snapshot, p.markup_pct, p.insurance_pct
+        FROM budget_versions bv INNER JOIN projects p ON p.id = bv.project_id
+        WHERE bv.id = ? AND bv.project_id = ? LIMIT 1`).bind(id, projectId).first<{ id: string; name: string; status: string; snapshot: string; markup_pct: number; insurance_pct: number }>();
+      if (!version) throw new Error("That estimate version could not be found.");
+      if (!signedOff) {
+        const linked = await db.prepare("SELECT COUNT(*) AS count FROM invoices WHERE project_id = ? AND source_version_id = ? AND status != 'void'").bind(projectId, id).first<{ count: number }>();
+        if (Number(linked?.count || 0) > 0) throw new Error("This sign-off is linked to an active invoice and cannot be removed.");
+        await db.prepare("UPDATE budget_versions SET signed_off = 0, signed_off_at = '', signed_off_by = '', signed_off_amount = 0 WHERE id = ? AND project_id = ?").bind(id, projectId).run();
+        await logActivity(projectId, "accounting", `${version.name} sign-off removed`, actor);
+      } else {
+        let rows: Record<string, unknown>[] = [];
+        try { rows = JSON.parse(String(version.snapshot || "[]")) as Record<string, unknown>[]; } catch { /* use an empty estimate */ }
+        const subtotal = rows.reduce((sum, row) => sum + signedNumberValue(row.estimate), 0);
+        const suggestedAmount = version.status.startsWith("overage")
+          ? subtotal
+          : subtotal * (1 + numberValue(version.markup_pct) / 100 + numberValue(version.insurance_pct) / 100);
+        const signedOffAmount = body.signedOffAmount === undefined ? suggestedAmount : numberValue(body.signedOffAmount);
+        const paymentTerms = textValue(body.paymentTerms, version.status.startsWith("overage") ? "100% upon approval · Net 30" : "50% advance · Balance upon completion · Net 30").slice(0, 2000);
+        const detectedPercent = paymentTerms.match(/(\d+(?:\.\d+)?)\s*%/)?.[1];
+        const billingPercent = Math.min(100, body.billingPercent === undefined ? numberValue(detectedPercent || (version.status.startsWith("overage") ? 100 : 50)) : numberValue(body.billingPercent));
+        const signedOffAt = /^\d{4}-\d{2}-\d{2}$/.test(textValue(body.signedOffAt)) ? textValue(body.signedOffAt) : now.slice(0, 10);
+        const signedOffBy = textValue(body.signedOffBy, "Client approval").slice(0, 300);
+        await db.prepare("UPDATE budget_versions SET signed_off = 1, signed_off_at = ?, signed_off_by = ?, signed_off_amount = ?, billing_percent = ?, payment_terms = ? WHERE id = ? AND project_id = ?")
+          .bind(signedOffAt, signedOffBy, signedOffAmount, billingPercent, paymentTerms, id, projectId).run();
+        await logActivity(projectId, "accounting", `${version.name} signed off by ${signedOffBy}`, actor);
       }
     } else if (action === "create_project") {
       if (authorization.accessLevel !== "admin" && authorization.accessLevel !== "full") return Response.json({ error: "Only administrators and full-access users can create projects." }, { status: 403 });
@@ -406,7 +468,7 @@ export async function POST(request: Request) {
       await db.batch([
         db.prepare("INSERT INTO projects (id, name, client, code, status, shoot_start, shoot_end, currency, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(projectId, name, client, code, "Planning", shootStart, shootEnd, "USD", now),
         db.prepare("INSERT INTO budget_lines (id, project_id, category, description, estimate, actual, created_at, section_code, item_code, item_name, rate, quantity, days, tax_pct) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "Production", "Working production costs", 0, 0, now, "A", "A1", "Production", 0, 1, 1, 0),
-        db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "V1 · Initial estimate", "draft", "[]", now),
+        db.prepare("INSERT INTO budget_versions (id, project_id, name, status, snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, "V1 · Initial estimate", "draft", "[]", now),
       ]);
       await logActivity(projectId, "project", `${name} created`, actor);
     } else if (action === "update_project_details") {
@@ -540,7 +602,7 @@ export async function POST(request: Request) {
       const confirm = body.confirm === true;
       const statements = [];
       if (confirm && !overage) statements.push(db.prepare("UPDATE budget_versions SET status = 'archived' WHERE project_id = ? AND status = 'confirmed'").bind(projectId));
-      statements.push(db.prepare("INSERT INTO budget_versions VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, name, overage ? "overage_confirmed" : confirm ? "confirmed" : "draft", JSON.stringify(rows.results), now));
+      statements.push(db.prepare("INSERT INTO budget_versions (id, project_id, name, status, snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), projectId, name, overage ? "overage_confirmed" : confirm ? "confirmed" : "draft", JSON.stringify(rows.results), now));
       await db.batch(statements);
       await logActivity(projectId, "budget", `${name} saved${confirm ? " and confirmed" : ""}`, actor);
     } else if (action === "set_budget_version_status") {
